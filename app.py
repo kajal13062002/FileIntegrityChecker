@@ -18,6 +18,10 @@ mysql = MySQL(app)
 # =========================================================
 # ADMIN LOGIN
 # =========================================================
+@app.route("/")
+def home():
+    return redirect(url_for("user_login"))
+
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin_login():

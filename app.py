@@ -7,6 +7,10 @@ app = Flask(__name__)
 
 app.secret_key = config.SECRET_KEY
 
+@app.route("/")
+def home():
+    return redirect(url_for("user_login"))
+
 app.config["MYSQL_HOST"] = config.MYSQL_HOST
 app.config["MYSQL_USER"] = config.MYSQL_USER
 app.config["MYSQL_PASSWORD"] = config.MYSQL_PASSWORD
@@ -18,9 +22,6 @@ mysql = MySQL(app)
 # =========================================================
 # ADMIN LOGIN
 # =========================================================
-@app.route("/")
-def home():
-    return redirect(url_for("user_login"))
 
 
 @app.route("/admin", methods=["GET", "POST"])

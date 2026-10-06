@@ -66,6 +66,7 @@ function escapeHtml(text) {
 }
 
 function formatDateTime(date) {
+    if (!date) return '—';
     return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 

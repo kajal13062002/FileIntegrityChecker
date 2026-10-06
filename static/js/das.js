@@ -47,6 +47,8 @@ const formatSize = (bytes) => {
     return `${(bytes / 1048576).toFixed(1)} MB`;
 };
 
+let currentUser = null;
+
 const state = {
     page: "dash",
     files: [],
@@ -401,7 +403,7 @@ const Views = {
                 <div>
                     <span class="tag">● SYSTEM PROTECTED</span>
 
-                    <h2>Welcome Kajal Patel</h2>
+                    <h2>Welcome ${escapeHTML(currentUser?.name || "User")}</h2>
 
                     <p>
                         Multi-algorithm file integrity verification & monitoring.
@@ -854,6 +856,7 @@ const Views = {
     },
 
     prof() {
+        const initial = (currentUser?.name || "U").trim().charAt(0).toUpperCase();
         const tile = (icon, label, value) => `
             <div class="profile-item">
                 <div class="profile-icon">${icon}</div>
@@ -867,11 +870,11 @@ const Views = {
 
         return `
             <div class="profile-hero">
-                <div class="avatar">K</div>
+            <div class="avatar">${initial}</div>    
 
                 <div class="profile-name">
-                    <h2>Kajal Patel</h2>
-                    <p>kajal@gmail.com</p>
+                    <h2>${escapeHTML(currentUser?.name || "User")}</h2>
+                    <p>${escapeHTML(currentUser?.email || "")}</p>
 
                     <div class="row">
                         <span class="chip">👤 user</span>
@@ -883,15 +886,15 @@ const Views = {
             <h4 class="section-heading">Account details</h4>
 
             <div class="profile-grid">
-                ${tile("✉", "Email", "kajal@gmail.com")}
-                ${tile("📞", "Phone", "9876543210")}
-                ${tile("⚥", "Gender", "Female")}
-                ${tile("🎂", "Date of Birth", "12 Aug 2002")}
-                ${tile("🏙", "City", "Ahmedabad")}
-                ${tile("📍", "State", "Gujarat")}
-                ${tile("🛡", "Role", "user")}
-                ${tile("●", "Status", "active")}
-                ${tile("🗓", "Account Created", formatDate(new Date(Date.now() - 86400000 * 30)))}
+                ${tile("✉", "Email", escapeHTML(currentUser?.email || "—"))}
+                ${tile("📞", "Phone", escapeHTML(currentUser?.mobile || "—"))}
+                ${tile("⚥", "Gender", escapeHTML(currentUser?.gender || "—"))}
+                ${tile("🎂", "Date of Birth", escapeHTML(currentUser?.dob || "—"))}
+                ${tile("🏙", "City", escapeHTML(currentUser?.city || "—"))}
+                ${tile("📍", "State", escapeHTML(currentUser?.state || "—"))}
+                ${tile("🛡", "Role", escapeHTML(currentUser?.role || "user"))}
+                ${tile("●", "Status", escapeHTML(currentUser?.status || "active"))}
+                ${tile("🗓", "Account Created", escapeHTML(currentUser?.created_at || "—"))}
             </div>
 
             <h4 class="section-heading">Last login</h4>
@@ -1100,52 +1103,28 @@ function bindUpload() {
         const algorithms = selectedAlgorithms();
 
         if (!files.length || !algorithms.length) {
-            $("uploadResult").innerHTML = `
-                <div class="card card-body empty">
-                    Choose a file and at least one algorithm.
-                </div>
-            `;
+            $("uploadResult").innerHTML = `<div class="card card-body empty">Choose a file and at least one algorithm.</div>`;
             return;
         }
 
         let output = "";
-
         for (const file of files) {
-            const buffer = await file.arrayBuffer();
-            const hashes = await calculateAllHashes(buffer, algorithms);
-            const id = state.files.length + 1;
+            const form = new FormData();
+            form.append("file", file);
+            algorithms.forEach(a => form.append("algorithms", a));
 
-            state.files.push({
-                id,
-                name: file.name,
-                size: file.size,
-                hashes,
-                status: "safe",
-                buffer: buffer.slice(0),
-                original: buffer.slice(0)
-            });
+            const response = await fetch("/api/user/upload", { method: "POST", body: form });
+            const data = await response.json();
+            if (!response.ok) {
+                output += `<div class="card card-body empty">${escapeHTML(data.error || "Upload failed")}</div>`;
+                continue;
+            }
 
-            logActivity(
-                `Uploaded ${file.name} (${Object.keys(hashes).length} hashes)`
-            );
-
-            output += `
-                <div class="card">
-                    <div class="card-header">
-                        ${escapeHTML(file.name)}
-                        · ${formatSize(file.size)}
-                        · ID #${id}
-                    </div>
-
-                    ${table(
-                        ["Algorithm", "Hash", ""],
-                        hashRows(hashes)
-                    )}
-                </div>
-            `;
+            output += `<div class="card"><div class="card-header">${escapeHTML(data.name)} · ${formatSize(data.size)} · ID #${data.id}</div>${table(["Algorithm","Hash",""], hashRows(data.hashes))}</div>`;
         }
 
         state.uploadResult = output;
+        await loadDatabaseData();
         $("uploadResult").innerHTML = output;
     };
 }
@@ -1158,88 +1137,19 @@ function bindVerify() {
     if (!$("verifyBtn")) return;
 
     $("verifyBtn").onclick = async () => {
-        const file = state.files.find(
-            (item) => item.id == $("verifyFile").value
-        );
-
+        const fileId = $("verifyFile").value;
         const upload = selectedFile("verifyInput");
+        if (!fileId || !upload) { alert("Choose a stored file and a file to compare."); return; }
 
-        if (!upload) {
-            alert("Choose a file to compare.");
-            return;
-        }
+        const form = new FormData();
+        form.append("file_id", fileId);
+        form.append("file", upload);
+        const response = await fetch("/api/user/verify", { method: "POST", body: form });
+        const data = await response.json();
+        if (!response.ok) { alert(data.error || "Verification failed"); return; }
 
-        const buffer = await upload.arrayBuffer();
-        const time = new Date();
-
-        let matched = 0;
-        const rows = [];
-
-        for (const algorithm of Object.keys(file.hashes)) {
-            const calculated = await calculateHash(buffer, algorithm);
-            const match = calculated === file.hashes[algorithm];
-
-            if (match) matched++;
-
-            rows.push([
-                algorithm,
-                file.hashes[algorithm],
-                calculated,
-                match
-            ]);
-
-            state.history.push({
-                id: state.history.length + 1,
-                file: file.name,
-                algorithm,
-                stored: file.hashes[algorithm],
-                calculated,
-                result: match ? "match" : "mismatch",
-                time
-            });
-        }
-
-        const total = rows.length;
-
-        const status =
-            matched === total
-                ? "safe"
-                : matched === 0
-                    ? "modified"
-                    : "tampered";
-
-        file.status = status;
-
-        logActivity(`Verified ${file.name}: ${status}`);
-
-        state.result = `
-            <div class="verify-result ${
-                status === "safe"
-                    ? "verify-safe"
-                    : status === "modified"
-                        ? "verify-modified"
-                        : "verify-tampered"
-            }">
-                <h3>File is ${status}</h3>
-                ${escapeHTML(file.name)}
-                · ${matched}/${total} algorithms matched
-            </div>
-
-            <div class="card">
-                ${table(
-                    ["Algorithm", "Stored", "Calculated", "Result"],
-                    rows.map((row) => `
-                        <tr>
-                            <td><span class="algorithm">${row[0]}</span></td>
-                            <td><span class="hash">${row[1]}</span></td>
-                            <td><span class="hash">${row[2]}</span></td>
-                            <td>${statusPill(row[3] ? "match" : "mismatch")}</td>
-                        </tr>
-                    `)
-                )}
-            </div>
-        `;
-
+        state.result = `<div class="verify-result ${data.result === "Original" ? "verify-safe" : "verify-tampered"}"><h3>File is ${escapeHTML(data.result)}</h3>${escapeHTML(data.file)} · ${data.matched}/${data.total} hashes matched</div><div class="card">${table(["Algorithm","Stored","Calculated","Result"], data.rows.map(row => `<tr><td><span class="algorithm">${escapeHTML(row.algorithm)}</span></td><td><span class="hash">${row.stored}</span></td><td><span class="hash">${row.calculated}</span></td><td>${statusPill(row.match ? "match" : "mismatch")}</td></tr>`))}</div>`;
+        await loadDatabaseData();
         render();
     };
 }
@@ -1474,6 +1384,32 @@ function bindCopyButtons() {
     });
 }
 
+async function loadDatabaseData() {
+    try {
+        const [userRes, filesRes, historyRes] = await Promise.all([
+            fetch("/api/user/me"),
+            fetch("/api/user/files"),
+            fetch("/api/user/history")
+        ]);
+        if (!userRes.ok) return;
+        currentUser = await userRes.json();
+        const files = filesRes.ok ? await filesRes.json() : [];
+        const history = historyRes.ok ? await historyRes.json() : [];
+        state.files = files.map(f => ({
+            id: f.id, name: f.name, size: f.size || 0, hashes: f.hashes || {},
+            status: f.status || "safe", filepath: f.filepath, upload_date: f.upload_date
+        }));
+        state.history = history.map((h, i) => ({
+            id: h.id || i + 1, file: h.filename || h.file || String(h.file_id || ""),
+            algorithm: h.algorithm || "—", stored: h.stored_hash || h.stored || "",
+            calculated: h.calculated_hash || h.calculated || "",
+            result: h.result || h.status || "", time: new Date(h.verified_at || h.checked_at || h.created_at || Date.now())
+        }));
+    } catch (error) {
+        console.error("Database load failed", error);
+    }
+}
+
 /* =========================
    NAVIGATION
 ========================= */
@@ -1508,12 +1444,27 @@ $("themeBtn").onclick = () => {
    LOGOUT
 ========================= */
 
-$("logoutBtn").onclick = () => {
-    alert("Logout button clicked.");
-};
+if ($("logoutBtn")) {
+    $("logoutBtn").onclick = () => { window.location.href = "/logout"; };
+}
 
 /* =========================
    INITIAL LOAD
 ========================= */
 
-render();
+loadDatabaseData().then(() => render());
+document.addEventListener("DOMContentLoaded", async () => {
+    try {
+        const res = await fetch("/api/user/me");
+        currentUser = res.ok ? await res.json() : { name: "User" };
+    } catch (error) {
+        console.error(error);
+        currentUser = { name: "User" };
+    }
+
+    document.querySelectorAll(".nav-link").forEach((link) => {
+        link.addEventListener("click", () => go(link.dataset.page));
+    });
+
+    render();
+});

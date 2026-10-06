@@ -3,7 +3,7 @@
    Needs ../shared/common.js (hashing + helpers).
 
    Sections:
-     1. State & demo data   (in the real Flask app this comes from MySQL)
+     1. State & data        (loaded from MySQL through /api/admin/...)
      2. Small helpers
      3. Pages               - one function per sidebar item
      4. Actions             - what each button does
@@ -11,10 +11,7 @@
    ========================================================================== */
 
 
-/* ---------- 1. STATE & DEMO DATA ----------------------------------------- */
-
-const hoursAgo = hours => new Date(Date.now() - hours * 3600 * 1000);
-const daysAgo  = days  => hoursAgo(days * 24);
+/* ---------- 1. STATE & DATA ---------------------------------------------- */
 
 const state = {
     page: 'dash',
@@ -25,71 +22,62 @@ const state = {
     editingUserId: null,       // null = adding a new user
     formDraft: null,           // what the admin typed (kept if validation fails)
     formError: '',
+    loading: true,
+    loadError: '',
 
-    users: [
-        { id: 1, name: 'Admin',          email: 'admin@gmail.com', phone: '9000000001', gender: 'M', dob: '1995-04-10', city: 'Ahmedabad', state: 'Gujarat', role: 'admin', status: 'active',   createdAt: daysAgo(60) },
-        { id: 2, name: 'Kajal Patel',    email: 'kajal@gmail.com', phone: '9876543210', gender: 'F', dob: '2002-08-12', city: 'Ahmedabad', state: 'Gujarat', role: 'user',  status: 'active',   createdAt: daysAgo(30) },
-        { id: 3, name: 'Yash Prajapati', email: 'yash@gmail.com',  phone: '9876500011', gender: 'M', dob: '2001-11-03', city: 'Surat',     state: 'Gujarat', role: 'user',  status: 'active',   createdAt: daysAgo(21) },
-        { id: 4, name: 'Riya Shah',      email: 'riya@gmail.com',  phone: '9876500022', gender: 'F', dob: '2002-02-20', city: 'Vadodara',  state: 'Gujarat', role: 'user',  status: 'active',   createdAt: daysAgo(9) },
-        { id: 5, name: 'Aman Verma',     email: 'aman@gmail.com',  phone: '9876500033', gender: 'M', dob: '2000-06-15', city: 'Rajkot',    state: 'Gujarat', role: 'user',  status: 'inactive', createdAt: daysAgo(4) }
-    ],
-
-    files: [
-        { id: 1, userId: 2, name: 'report_final.pdf',  size: 482113,   algorithms: ['SHA-256', 'SHA-512'],            status: 'safe',     uploadedAt: hoursAgo(70) },
-        { id: 2, userId: 2, name: 'thesis_draft.docx', size: 913402,   algorithms: ['SHA-256', 'SHA3-256'],           status: 'safe',     uploadedAt: hoursAgo(60) },
-        { id: 3, userId: 3, name: 'budget_2026.xlsx',  size: 55120,    algorithms: ['SHA-1', 'SHA-256', 'SHA-384'],   status: 'modified', uploadedAt: hoursAgo(40) },
-        { id: 4, userId: 3, name: 'backup.zip',        size: 20481234, algorithms: ['SHA-512', 'SHA3-512'],           status: 'safe',     uploadedAt: hoursAgo(30) },
-        { id: 5, userId: 4, name: 'logo.png',          size: 18220,    algorithms: ['SHA-256'],                       status: 'tampered', uploadedAt: hoursAgo(20) },
-        { id: 6, userId: 4, name: 'notes.txt',         size: 1204,     algorithms: ['SHA-256', 'SHA-224'],            status: 'safe',     uploadedAt: hoursAgo(8) },
-        { id: 7, userId: 2, name: 'db_dump.sql',       size: 3321100,  algorithms: ['SHA-256', 'SHA-512', 'SHA3-256'], status: 'safe',    uploadedAt: hoursAgo(2) }
-    ],
-
-    integrityLogs: [
-        { id: 1, fileId: 3, algorithm: 'SHA-256', status: 'modified', change: 'Content modified',      remarks: '1/3 algorithms matched', checkedAt: hoursAgo(14) },
-        { id: 2, fileId: 5, algorithm: 'SHA-256', status: 'tampered', change: 'Partial hash mismatch', remarks: '1/2 algorithms matched', checkedAt: hoursAgo(9) },
-        { id: 3, fileId: 1, algorithm: 'SHA-256', status: 'safe',     change: 'No change',             remarks: '2/2 algorithms matched', checkedAt: hoursAgo(6) },
-        { id: 4, fileId: 6, algorithm: 'SHA-256', status: 'safe',     change: 'No change',             remarks: '2/2 algorithms matched', checkedAt: hoursAgo(3) }
-    ],
-
-    monitorEvents: [
-        { id: 1, event: 'Modified', file: 'budget_2026.xlsx', alert: 'generated',     detectedAt: hoursAgo(14) },
-        { id: 2, event: 'Modified', file: 'logo.png',         alert: 'generated',     detectedAt: hoursAgo(9) },
-        { id: 3, event: 'Created',  file: 'db_dump.sql',      alert: 'not_generated', detectedAt: hoursAgo(2) }
-    ],
-
-    activities: [
-        { id: 1, user: 'Kajal Patel',    text: 'Uploaded db_dump.sql',                    type: 'UPLOAD', time: hoursAgo(2) },
-        { id: 2, user: 'Administrator',  text: 'Generated System Integrity Report',       type: 'REPORT', time: hoursAgo(4) },
-        { id: 3, user: 'Yash Prajapati', text: 'Verified budget_2026.xlsx -> modified',   type: 'VERIFY', time: hoursAgo(14) },
-        { id: 4, user: 'Riya Shah',      text: 'Verified logo.png -> tampered',           type: 'VERIFY', time: hoursAgo(9) },
-        { id: 5, user: 'Administrator',  text: 'Added user Aman Verma',                   type: 'USER',   time: hoursAgo(96) }
-    ],
-
-    logins: [
-        { id: 1, email: 'admin@gmail.com',  role: 'admin', status: 'success', ip: '127.0.0.1', time: hoursAgo(1) },
-        { id: 2, email: 'kajal@gmail.com',  role: 'user',  status: 'success', ip: '127.0.0.1', time: hoursAgo(5) },
-        { id: 3, email: 'unknown@mail.com', role: '—',     status: 'failed',  ip: '127.0.0.1', time: hoursAgo(7) },
-        { id: 4, email: 'yash@gmail.com',   role: 'user',  status: 'success', ip: '127.0.0.1', time: hoursAgo(12) },
-        { id: 5, email: 'riya@gmail.com',   role: 'user',  status: 'success', ip: '127.0.0.1', time: hoursAgo(26) }
-    ],
-
-    reports: [
-        { id: 1, type: 'System Integrity Report', by: 'Administrator', total: 7, safe: 5, modified: 1, tampered: 1, createdAt: hoursAgo(30),  status: 'completed' },
-        { id: 2, type: 'Security Audit Report',   by: 'Administrator', total: 7, safe: 6, modified: 1, tampered: 0, createdAt: hoursAgo(100), status: 'completed' }
-    ]
+    // everything below is filled from MySQL by loadData()
+    users: [], files: [], integrityLogs: [], monitorEvents: [],
+    activities: [], logins: [], reports: [],
+    me: { id: 0, name: 'Admin', email: '', role: 'admin', status: 'active', lastLogin: null },
+    system: { database: '-', backend: '-' }
 };
 
-// Demo only: give every seeded file real hashes (computed from its name).
-state.files.forEach(file => file.hashes = {});     // empty until the hashes below are ready
-(async () => {
-    for (const file of state.files) {
-        for (const algorithm of file.algorithms) {
-            const hash = await hashBytes(new TextEncoder().encode('FIC:' + file.name), algorithm);
-            if (hash) file.hashes[algorithm] = hash;
-        }
+/** Call the Flask API. Throws Error(message) when the server says no. */
+async function api(method, url, body) {
+    const options = { method, credentials: 'same-origin', headers: {} };
+    if (body !== undefined) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(body);
+    }
+    const response = await fetch(url, options);
+    let data = {};
+    try { data = await response.json(); } catch (error) { /* no JSON body */ }
+    if (response.status === 401) { window.location.href = '/admin'; throw new Error('Session expired'); }
+    if (!response.ok) throw new Error(data.error || 'Request failed (' + response.status + ')');
+    return data;
+}
+
+const toDate = value => value ? new Date(value) : null;
+
+/** Fetch every table the console shows and turn date strings into Dates. */
+async function loadData() {
+    const data = await api('GET', '/api/admin/data');
+    state.users         = data.users.map(user => ({ ...user, createdAt: toDate(user.createdAt) }));
+    state.files         = data.files.map(file => ({ ...file, uploadedAt: toDate(file.uploadedAt), lastChecked: toDate(file.lastChecked) }));
+    state.integrityLogs = data.integrityLogs.map(log => ({ ...log, checkedAt: toDate(log.checkedAt) }));
+    state.monitorEvents = data.monitorEvents.map(event => ({ ...event, detectedAt: toDate(event.detectedAt) }));
+    state.activities    = data.activities.map(activity => ({ ...activity, time: toDate(activity.time) }));
+    state.logins        = data.logins.map(login => ({ ...login, time: toDate(login.time), logout: toDate(login.logout) }));
+    state.reports       = data.reports.map(report => ({ ...report, createdAt: toDate(report.createdAt) }));
+    state.me            = { ...data.me, createdAt: toDate(data.me.createdAt),
+                            lastLogin: data.me.lastLogin
+                                ? { ...data.me.lastLogin, time: toDate(data.me.lastLogin.time), logout: toDate(data.me.lastLogin.logout) }
+                                : null };
+    state.system        = data.system;
+    state.loading = false;
+    state.loadError = '';
+}
+
+/** Run a server action, reload the tables, redraw. Errors are shown in an alert. */
+async function runAction(action) {
+    try {
+        await action();
+        await loadData();
+    } catch (error) {
+        alert(error.message);
     }
     render();
-})();
+}
 
 
 /* ---------- 2. SMALL HELPERS -------------------------------------------- */
@@ -98,13 +86,6 @@ const findUser = id => state.users.find(user => user.id == id);
 const findFile = id => state.files.find(file => file.id == id);
 const userName = id => (findUser(id) || { name: '—' }).name;
 const countFiles = status => state.files.filter(file => file.status === status).length;
-const nextId = list => Math.max(0, ...list.map(item => item.id)) + 1;
-
-const GENDER_LABELS = { M: 'Male', F: 'Female', O: 'Other' };
-
-function logActivity(text, type) {
-    state.activities.push({ id: nextId(state.activities), user: 'Administrator', text, type, time: new Date() });
-}
 
 const rolePill = role => `<span class="pill ${role === 'admin' ? 'adm' : 'usr'}">${role}</span>`;
 
@@ -164,7 +145,7 @@ const pages = {
 
         const perUserBars = Object.entries(filesPerUser).map(([userId, count]) => `
             <div style="display:flex;justify-content:space-between;font-size:13px">
-                <span>${userName(userId)}</span><b>${count}</b>
+                <span>${escapeHtml(userName(userId))}</span><b>${count}</b>
             </div>
             ${progressBar(100 * count / mostFiles)}`).join('');
 
@@ -226,7 +207,7 @@ const pages = {
                 <td>${pill(user.status)}</td>
                 <td>
                     <button class="btn bs ye" data-edit-user="${user.id}">Edit</button>
-                    ${user.id === 1 ? '' : `<button class="btn bs rd" data-delete-user="${user.id}">Delete</button>`}
+                    ${user.id === state.me.id ? '' : `<button class="btn bs rd" data-delete-user="${user.id}">Delete</button>`}
                 </td>
             </tr>`);
 
@@ -255,12 +236,15 @@ const pages = {
             <div class="card cb" style="margin-top:0;max-width:560px">
                 ${field('Full name', textInput('formName',  user.name,  50))}
                 ${field('Email',     textInput('formEmail', user.email, 50))}
+                ${field(isEditing ? 'New password (leave empty to keep)' : 'Password',
+                        '<input type="password" id="formPassword" maxlength="64" autocomplete="new-password">')}
                 ${field('Phone',     textInput('formPhone', user.phone, 10))}
                 ${field('Gender', `<select id="formGender">
                     ${option('', user.gender || '', '—')}
-                    ${option('M', user.gender, 'Male')}
-                    ${option('F', user.gender, 'Female')}
-                    ${option('O', user.gender, 'Other')}
+                    ${option('Male', user.gender, 'Male')}
+                    ${option('Female', user.gender, 'Female')}
+                    ${option('Other', user.gender, 'Other')}
+                    ${option('Prefer not to say', user.gender, 'Prefer not to say')}
                 </select>`)}
                 ${field('Date of birth', `<input type="date" id="formDob" value="${user.dob || ''}">`)}
                 ${field('City',  textInput('formCity',  user.city,  25))}
@@ -321,8 +305,8 @@ const pages = {
                     <td>${escapeHtml(file ? userName(file.userId) : '—')}</td>
                     <td>${algorithmChip(log.algorithm)}</td>
                     <td>${pill(log.status)}</td>
-                    <td>${log.change}</td>
-                    <td>${log.remarks}</td>
+                    <td>${escapeHtml(log.change)}</td>
+                    <td>${escapeHtml(log.remarks)}</td>
                     <td>${formatDateTime(log.checkedAt)}</td>
                 </tr>`;
         });
@@ -331,7 +315,7 @@ const pages = {
             <tr>
                 <td>${event.id}</td>
                 <td><b>${escapeHtml(event.file)}</b></td>
-                <td>${event.event}</td>
+                <td>${escapeHtml(event.event)}</td>
                 <td>${pill(event.alert)}</td>
                 <td>${formatDateTime(event.detectedAt)}</td>
             </tr>`);
@@ -352,15 +336,18 @@ const pages = {
         const rows = state.reports.slice().reverse().map(report => `
             <tr>
                 <td>${report.id}</td>
-                <td><b>${report.type}</b></td>
-                <td>${report.by}</td>
+                <td><b>${escapeHtml(report.type)}</b></td>
+                <td>${escapeHtml(report.by)}</td>
                 <td>${report.total}</td>
                 <td>${report.safe}</td>
                 <td>${report.modified}</td>
                 <td>${report.tampered}</td>
                 <td>${formatDateTime(report.createdAt)}</td>
                 <td>${pill(report.status)}</td>
-                <td><button class="btn bs rd" data-delete-report="${report.id}">Delete</button></td>
+                <td>
+                    <a class="btn bs lt" href="/api/admin/reports/${report.id}/download">Download</a>
+                    <button class="btn bs rd" data-delete-report="${report.id}">Delete</button>
+                </td>
             </tr>`);
 
         const actions = `
@@ -380,8 +367,9 @@ const pages = {
 
     /** Admin profile - vertical rows (same style as the user Profile). */
     profile() {
-        const admin = state.users[0];
+        const admin = state.me;
         const born = admin.dob ? new Date(admin.dob).toLocaleDateString([], { dateStyle: 'medium' }) : '—';
+        const last = admin.lastLogin;
 
         return `
             ${pageTitle('Profile', 'Administrator account information.')}
@@ -391,11 +379,11 @@ const pages = {
                     ['Full Name',       escapeHtml(admin.name)],
                     ['Email',           escapeHtml(admin.email)],
                     ['Role',            admin.role],
-                    ['Phone',           admin.phone || '—'],
-                    ['Gender',          GENDER_LABELS[admin.gender] || '—'],
+                    ['Phone',           escapeHtml(admin.phone || '—')],
+                    ['Gender',          escapeHtml(admin.gender || '—')],
                     ['Date of Birth',   born],
-                    ['City',            admin.city || '—'],
-                    ['State',           admin.state || '—'],
+                    ['City',            escapeHtml(admin.city || '—')],
+                    ['State',           escapeHtml(admin.state || '—')],
                     ['Account Status',  admin.status],
                     ['Account Created', formatDateTime(admin.createdAt)]
                 ])}
@@ -403,10 +391,10 @@ const pages = {
             <div class="card" >
                 <div class="ch">Last login</div>
                 ${keyValueRows([
-                    ['Login Status',  'success'],
-                    ['IP Address',    '127.0.0.1'],
-                    ['Login Time',    formatDateTime(new Date())],
-                    ['Logout Time',   'Active session']
+                    ['Login Status',  last ? last.status : '—'],
+                    ['IP Address',    last ? escapeHtml(last.ip || '—') : '—'],
+                    ['Login Time',    last ? formatDateTime(last.time) : '—'],
+                    ['Logout Time',   last && last.logout ? formatDateTime(last.logout) : 'Active session']
                 ])}
             </div>`;
     },
@@ -419,31 +407,32 @@ const pages = {
             content = `
                 <div class="card cb" style="margin-top:0;max-width:520px">
                     <h4 style="margin-bottom:14px">Change password</h4>
-                    <div><label class="fl">Current password</label><input type="text" id="currentPassword"></div>
-                    <div><label class="fl">New password</label><input type="text" id="newPassword"></div>
+                    <div><label class="fl">Current password</label><input type="password" id="currentPassword" autocomplete="current-password"></div>
+                    <div><label class="fl">New password</label><input type="password" id="newPassword" autocomplete="new-password"></div>
                     <div id="passwordMessage" style="min-height:22px;margin:4px 0 10px"></div>
                     <button class="btn" id="changePassword">Update password</button>
                 </div>`;
         } else if (state.settingsTab === 'login') {
             const rows = state.logins.map(login => `
                 <tr>
-                    <td>${login.id}</td><td>${login.email}</td><td>${login.role}</td>
-                    <td>${pill(login.status)}</td><td>${login.ip}</td><td>${formatDateTime(login.time)}</td>
+                    <td>${login.id}</td><td>${escapeHtml(login.email)}</td><td>${login.role}</td>
+                    <td>${pill(login.status)}</td><td>${escapeHtml(login.ip)}</td><td>${formatDateTime(login.time)}</td>
+                    <td>${login.logout ? formatDateTime(login.logout) : '—'}</td>
                 </tr>`);
-            content = `<div class="card" style="margin-top:0">${table(['ID', 'Email', 'Role', 'Status', 'IP Address', 'Login Time'], rows, '')}</div>`;
+            content = `<div class="card" style="margin-top:0">${table(['ID', 'Email', 'Role', 'Status', 'IP Address', 'Login Time', 'Logout Time'], rows, 'No logins recorded yet.')}</div>`;
         } else if (state.settingsTab === 'activity') {
             const rows = state.activities.slice().reverse().map(activity => `
                 <tr>
-                    <td>${activity.id}</td><td>${activity.user}</td><td>${escapeHtml(activity.text)}</td>
+                    <td>${activity.id}</td><td>${escapeHtml(activity.user)}</td><td>${escapeHtml(activity.text)}</td>
                     <td>${algorithmChip(activity.type)}</td><td>${formatDateTime(activity.time)}</td>
                 </tr>`);
-            content = `<div class="card" style="margin-top:0">${table(['ID', 'User', 'Activity', 'Type', 'Time'], rows, '')}</div>`;
+            content = `<div class="card" style="margin-top:0">${table(['ID', 'User', 'Activity', 'Type', 'Time'], rows, 'No activity recorded yet.')}</div>`;
         } else {
             content = `
                 <div class="card" style="margin-top:0">
                     ${keyValueRows([
-                        ['Database',        'MySQL 8.0'],
-                        ['Backend',         'Python 3.11 · Flask 3.0'],
+                        ['Database',        escapeHtml(state.system.database)],
+                        ['Backend',         escapeHtml(state.system.backend)],
                         ['Frontend',        'HTML5 · CSS3 · Bootstrap 5 · JavaScript'],
                         ['Hash algorithms', ALGORITHMS.length + ' (SHA-1, SHA-2, SHA-3 family)'],
                         ['Version',         '1.0.0']
@@ -481,33 +470,39 @@ function showUserForm(userId) {
     render();
 }
 
-/** Read the Add/Edit form, validate it, then save. */
-function saveUser() {
+/** Read the Add/Edit form, validate it, then save to MySQL. */
+async function saveUser() {
     const values = {
-        name:   byId('formName').value.trim(),
-        email:  byId('formEmail').value.trim().toLowerCase(),
-        phone:  byId('formPhone').value.trim(),
-        gender: byId('formGender').value,
-        dob:    byId('formDob').value,
-        city:   byId('formCity').value.trim(),
-        state:  byId('formState').value.trim(),
-        role:   byId('formRole').value,
-        status: byId('formStatus').value
+        name:     byId('formName').value.trim(),
+        email:    byId('formEmail').value.trim().toLowerCase(),
+        password: byId('formPassword').value,
+        phone:    byId('formPhone').value.trim(),
+        gender:   byId('formGender').value,
+        dob:      byId('formDob').value,
+        city:     byId('formCity').value.trim(),
+        state:    byId('formState').value.trim(),
+        role:     byId('formRole').value,
+        status:   byId('formStatus').value
     };
-    state.formDraft = values;       // keep what was typed if we show an error
+    state.formDraft = { ...values, password: '' };   // keep what was typed if we show an error
 
     const fail = message => { state.formError = message; render(); };
+    const isEditing = state.editingUserId !== null;
 
     if (!values.name || !/^\S+@\S+\.\S+$/.test(values.email)) return fail('Enter a name and a valid email.');
-    if (state.users.some(user => user.email === values.email && user.id !== state.editingUserId)) return fail('Email already exists.');
+    if (state.users.some(user => user.email.toLowerCase() === values.email && user.id !== state.editingUserId)) return fail('Email already exists.');
+    if (!isEditing && values.password.length < 6) return fail('Password must be at least 6 characters.');
+    if (isEditing && values.password && values.password.length < 6) return fail('Password must be at least 6 characters.');
     if (values.phone && !/^\d{10}$/.test(values.phone)) return fail('Phone must be 10 digits.');
+    if (values.role === 'user' && !(values.phone && values.gender && values.dob && values.city && values.state))
+        return fail('Phone, gender, date of birth, city and state are required for user accounts.');
 
-    if (state.editingUserId !== null) {
-        Object.assign(findUser(state.editingUserId), values);
-        logActivity('Updated user ' + values.name, 'USER');
-    } else {
-        state.users.push({ id: nextId(state.users), ...values, createdAt: new Date() });
-        logActivity('Added user ' + values.name, 'USER');
+    try {
+        if (isEditing) await api('PUT', '/api/admin/users/' + state.editingUserId, values);
+        else           await api('POST', '/api/admin/users', values);
+        await loadData();
+    } catch (error) {
+        return fail(error.message);
     }
     goTo('users');
 }
@@ -524,58 +519,22 @@ function confirmThenDelete(button, deleteFunction) {
     };
 }
 
-function deleteUser(id) {
-    const user = findUser(id);
-    state.users = state.users.filter(item => item.id !== user.id);
-    state.files = state.files.filter(file => file.userId !== user.id);   // their files go too
-    logActivity('Deleted user ' + user.name, 'USER');
-    render();
-}
+const deleteUser   = id => runAction(() => api('DELETE', '/api/admin/users/' + id));
+const deleteFile   = id => runAction(() => api('DELETE', '/api/admin/files/' + id));
+const deleteReport = id => runAction(() => api('DELETE', '/api/admin/reports/' + id));
 
-function deleteFile(id) {
-    const file = findFile(id);
-    state.files = state.files.filter(item => item.id !== file.id);
-    logActivity('Deleted file ' + file.name, 'DELETE');
-    render();
-}
-
-function deleteReport(id) {
-    state.reports = state.reports.filter(report => report.id != id);
-    render();
-}
-
-/** Demo scan: log the current status of every file. */
-function scanAllFiles() {
-    state.files.forEach(file => state.integrityLogs.push({
-        id: nextId(state.integrityLogs),
-        fileId: file.id,
-        algorithm: file.algorithms[0],
-        status: file.status,
-        change: file.status === 'safe' ? 'No change' : 'Hash mismatch',
-        remarks: 'Admin scan',
-        checkedAt: new Date()
-    }));
-    state.monitorEvents.push({
-        id: nextId(state.monitorEvents), event: 'Scan', file: state.files.length + ' files',
-        alert: 'not_generated', detectedAt: new Date()
+/** Server re-hashes every stored file and compares it with the saved hashes. */
+async function scanAllFiles() {
+    const button = byId('scanAll');
+    if (button) { button.disabled = true; button.textContent = 'Scanning…'; }
+    await runAction(async () => {
+        const result = await api('POST', '/api/admin/scan');
+        alert('Scanned ' + result.scanned + ' files: ' + result.safe + ' safe, ' +
+              result.modified + ' modified, ' + result.tampered + ' tampered.');
     });
-    render();
 }
 
-function generateReport() {
-    state.reports.push({
-        id: nextId(state.reports),
-        type: byId('reportType').value,
-        by: 'Administrator',
-        total: state.files.length,
-        safe: countFiles('safe'),
-        modified: countFiles('modified'),
-        tampered: countFiles('tampered'),
-        createdAt: new Date(),
-        status: 'completed'
-    });
-    render();
-}
+const generateReport = () => runAction(() => api('POST', '/api/admin/reports', { type: byId('reportType').value }));
 
 function copyReportsCsv() {
     const lines = state.reports.map(r => [r.id, r.type, r.total, r.safe, r.modified, r.tampered].join(','));
@@ -584,11 +543,19 @@ function copyReportsCsv() {
     byId('copyReports').textContent = 'Copied ✓';
 }
 
-function changePassword() {
+async function changePassword() {
     const message = byId('passwordMessage');
-    const isValid = byId('currentPassword').value && byId('newPassword').value.length >= 6;
-    message.style.color = isValid ? '#16a34a' : '#dc2626';
-    message.textContent = isValid ? 'Password updated successfully.' : 'New password must be at least 6 characters.';
+    const show = (text, ok) => { message.style.color = ok ? '#16a34a' : '#dc2626'; message.textContent = text; };
+
+    if (byId('newPassword').value.length < 6) return show('New password must be at least 6 characters.', false);
+    try {
+        await api('POST', '/api/admin/password', { current: byId('currentPassword').value, new: byId('newPassword').value });
+        byId('currentPassword').value = '';
+        byId('newPassword').value = '';
+        show('Password updated successfully.', true);
+    } catch (error) {
+        show(error.message, false);
+    }
 }
 
 
@@ -633,6 +600,12 @@ function connectPageButtons() {
 }
 
 function render() {
+    if (state.loading || state.loadError) {
+        byId('view').innerHTML = `<div class="card cb">${state.loadError
+            ? 'Could not load data: ' + escapeHtml(state.loadError)
+            : 'Loading…'}</div>`;
+        return;
+    }
     const activeLink = state.page === 'userForm' ? 'users' : state.page;
     document.querySelectorAll('[data-p]').forEach(link =>
         link.classList.toggle('on', link.dataset.p === activeLink));
@@ -653,7 +626,6 @@ byId('themeToggle').onclick = () => {
 };
 
 /* ---- start-up ---- */
-/* ---- start-up ---- */
 document.querySelectorAll('[data-p]').forEach(link =>
     link.onclick = () => goTo(link.dataset.p)
 );
@@ -662,4 +634,7 @@ byId('logout').onclick = () => {
     window.location.href = '/logout';
 };
 
-render();
+render();                                   // shows "Loading…"
+loadData()
+    .then(render)
+    .catch(error => { state.loadError = error.message; render(); });

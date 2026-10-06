@@ -20,25 +20,27 @@ app = Flask(__name__)
 # APP CONFIG
 # =========================================================
 
-app.secret_key = config.SECRET_KEY
-app.config["MYSQL_HOST"] = config.MYSQL_HOST
-app.config["MYSQL_USER"] = config.MYSQL_USER
-app.config["MYSQL_PASSWORD"] = config.MYSQL_PASSWORD
-app.config["MYSQL_DB"] = config.MYSQL_DB
-app.config["MYSQL_PORT"] = int(getattr(config, "MYSQL_PORT", 3306))
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+import os
+from urllib.parse import urlparse
+from flask_mysqldb import MySQL
 
-mysql = MySQL(app)
+db_url = os.environ.get("DATABASE_URL")
 
-app = Flask(__name__)
-
-app.secret_key = config.SECRET_KEY
-
-app.config["MYSQL_HOST"] = config.MYSQL_HOST
-app.config["MYSQL_USER"] = config.MYSQL_USER
-app.config["MYSQL_PASSWORD"] = config.MYSQL_PASSWORD
-app.config["MYSQL_DB"] = config.MYSQL_DB
+if db_url:
+    # Render / Aiven
+    u = urlparse(db_url)
+    app.config['MYSQL_HOST'] = u.hostname
+    app.config['MYSQL_PORT'] = u.port
+    app.config['MYSQL_USER'] = u.username
+    app.config['MYSQL_PASSWORD'] = u.password
+    app.config['MYSQL_DB'] = u.path.lstrip('/')
+    app.config['MYSQL_CUSTOM_OPTIONS'] = {"ssl_mode": "REQUIRED"}
+else:
+    # Local (XAMPP)
+    app.config['MYSQL_HOST'] = 'localhost'
+    app.config['MYSQL_USER'] = 'root'
+    app.config['MYSQL_PASSWORD'] = ''
+    app.config['MYSQL_DB'] = 'file_integrity'
 
 mysql = MySQL(app)
 
@@ -582,7 +584,7 @@ def api_user_me():
 @app.route("/api/user/files")
 @user_required
 def api_user_files():
-    db_user_id = session.get("db_user_id")
+    db_user_id = session.get("user_id")
     if not db_user_id:
         return []
 
@@ -627,6 +629,7 @@ def api_user_history():
         (session.get("db_user_id"),))
     rows = cursor.fetchall()
     cursor.close()
+    rows = list(rows)
     rows.reverse()      # oldest first; the page shows newest on top
 
     return [{
@@ -653,6 +656,7 @@ def api_user_upload():
         return {"error": "No valid hash algorithm selected"}, 400
 
     db_user_id = session.get("db_user_id")
+    print("DB USER ID:", db_user_id)
     if not db_user_id:
         return {"error": "User mapping not found"}, 500
 
@@ -668,8 +672,10 @@ def api_user_upload():
     extension = os.path.splitext(safe_name)[1].lstrip(".").lower()[:20] or "unknown"
     now = datetime.now()
 
+    print("DB USER ID:", db_user_id, )
     cursor = conn().cursor()
     try:
+
         cursor.execute(
             """INSERT INTO files
                (user_id, file_name, file_path, file_size, file_type,

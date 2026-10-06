@@ -15,7 +15,7 @@ from functools import wraps
 from importlib.metadata import version as package_version
 
 app = Flask(__name__)
-
+app.secret_key = os.environ.get("1df741b74a5d8428d73f80f34bf7956e997047d6ba85ed2fa28e6303d4d594e0")
 # =========================================================
 # APP CONFIG
 # =========================================================

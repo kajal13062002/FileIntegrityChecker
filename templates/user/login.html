@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>User Login - File Integrity Checker</title>
+
+<link rel="stylesheet"
+      href="{{ url_for('static', filename='css/login.css') }}">
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet">
+
+</head>
+
+<body>
+
+<div class="overlay"></div>
+
+<div class="container">
+
+    <div class="heading">
+
+     <h1>FILE INTEGRITY CHECKER</h1>
+
+    </div>
+
+
+    <div class="login-card">
+
+        <!-- Shield -->
+
+        <div class="shield">
+
+            <svg width="45"
+                 height="45"
+                 fill="none"
+                 stroke="#1ea7ff"
+                 stroke-width="2"
+                 viewBox="0 0 24 24">
+
+                <path d="M12 2L20 5V11C20 16 16.5 20 12 22C7.5 20 4 16 4 11V5L12 2Z"/>
+
+                <path d="M9 12L11 14L15 10"/>
+
+            </svg>
+
+        </div>
+
+
+        <!-- User Login -->
+
+        <h2>User Login</h2>
+
+
+        {% if error %}
+
+        <div class="error">
+            {{ error }}
+        </div>
+
+        {% endif %}
+
+
+        <form method="POST"
+              action="{{ url_for('user_login') }}">
+
+
+            <!-- Email -->
+
+            <div class="input-box">
+
+                <label>Email</label>
+
+                <input
+                    type="email"
+                    name="email"
+                    placeholder="Enter Email"
+                    required>
+
+            </div>
+
+
+            <!-- Password -->
+
+            <div class="input-box">
+
+                <label>Password</label>
+
+                <input
+                    type="password"
+                    name="password"
+                    placeholder="Enter Password"
+                    required>
+
+            </div>
+
+
+            <!-- Login -->
+
+            <button class="login-btn"
+                    type="submit">
+
+                Login
+
+            </button>
+
+
+            <!-- OR -->
+
+            <div class="or-text">
+                OR
+            </div>
+
+
+            <!-- Admin Login -->
+
+            <a href="{{ url_for('admin_login') }}"
+               class="user-login-btn">
+
+                Admin Login
+
+            </a>
+
+
+            <!-- Create Account -->
+
+            <div class="links">
+
+                Do not have an account?
+
+                <a href="{{ url_for('user_register') }}">
+                    Create Account
+                </a>
+
+            </div>
+
+
+            <!-- Footer -->
+
+            <div class="footer-text">
+
+                <strong>
+                    DESIGNED BY - <br>
+                    AMPICS GANPAT UNIVERSITY
+                </strong>
+
+            </div>
+
+
+        </form>
+
+    </div>
+
+
+    <div class="bottom-menu">
+    </div>
+
+</div>
+
+</body>
+</html>

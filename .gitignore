@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Secrets
+.env
+.env.*
+config_local.py
+
+# Flask / IDE
+instance/
+*.log
+.vscode/
+.idea/
+
+# Database dumps
+*.sql
+
+# Runtime-generated files
+uploads/*
+reports/*

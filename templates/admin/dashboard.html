@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>File Integrity Checker - Admin Console</title>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+
+    <!-- Hash libraries: SHA-224, SHA-512/224, SHA-512/256 and SHA-3.
+         SHA-1 / SHA-256 / SHA-384 / SHA-512 use the browser's built-in Web Crypto API. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.11.0/sha256.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha512/0.9.0/sha512.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
+</head>
+<body>
+    <!-- ===== Sidebar ===== -->
+    <aside class="side">
+        <div class="ti">Admin</div>
+        <a class="l" data-p="dash">🏠 Dashboard</a>
+        <a class="l" data-p="users">👥 Manage Users</a>
+        <a class="l" data-p="files">📁 Manage Files</a>
+        <a class="l" data-p="logs">📡 Integrity Logs</a>
+        <a class="l" data-p="reports">📊 Reports</a>
+        <a class="l" data-p="profile">👤 Profile</a>
+        <a class="l" data-p="settings">⚙️ Settings</a>
+        <a class="l" id="logout">🚪 Logout</a>
+    </aside>
+
+    <!-- ===== Top bar + page content (filled by app.js) ===== -->
+    <div class="wrap">
+        <div class="tb">
+            <h4>File Integrity Checker</h4>
+            <div class="tr">
+                <button class="ib" id="themeToggle" title="Light / Dark theme">◐</button>
+                <span class="ub">Administrator</span>
+            </div>
+        </div>
+        <main id="view"></main>
+    </div>
+
+    <!-- shared helpers first, then this page's logic -->
+    <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/admin_app.js') }}"></script>
+</body>
+</html>

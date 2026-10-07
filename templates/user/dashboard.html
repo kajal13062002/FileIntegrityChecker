@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        File Integrity Checker | User Dashboard
+    </title>
+
+    <!-- Google Font -->
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap"
+        rel="stylesheet"
+    >
+
+    <!-- SHA Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha256/0.11.0/sha256.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha512/0.9.0/sha512.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
+
+
+    <!-- Dashboard CSS -->
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/user_dashboard.css') }}"
+    >
+
+</head>
+
+
+<body>
+
+    <!-- =====================================================
+         SIDEBAR
+    ====================================================== -->
+
+    <aside class="side">
+
+        <!-- Brand -->
+        <div class="brand">
+
+            <span class="logo">
+                🛡
+            </span>
+
+            <span>
+                File Integrity Checker
+            </span>
+
+        </div>
+
+
+        <!-- Overview -->
+        <small>
+            Overview
+        </small>
+
+        <a
+            class="nav-link"
+            data-page="dash"
+        >
+            🏠 Dashboard
+        </a>
+
+
+        <!-- File Tools -->
+        <small>
+            File Tools
+        </small>
+
+        <a
+            class="nav-link"
+            data-page="upload"
+        >
+            ☁ Upload File
+        </a>
+
+        <a
+            class="nav-link"
+            data-page="verify"
+        >
+            ✓ Verify File
+        </a>
+
+        <a
+            class="nav-link"
+            data-page="tool"
+        >
+            🔐 Hash Tool
+        </a>
+
+        <a
+            class="nav-link"
+            data-page="cmp"
+        >
+            ⚖ Compare Files
+        </a>
+
+        <a
+            class="nav-link"
+            data-page="mon"
+        >
+            📡 Monitor
+        </a>
+
+
+        <!-- Records -->
+        <small>
+            Records
+        </small>
+
+        <a
+            class="nav-link"
+            data-page="hist"
+        >
+            🕘 History
+        </a>
+
+        <a
+            class="nav-link"
+            data-page="rep"
+        >
+            📊 Reports
+        </a>
+
+
+        <!-- Account -->
+        <small>
+            Account
+        </small>
+
+        <a
+            class="nav-link"
+            data-page="prof"
+        >
+            👤 Profile
+        </a>
+
+
+        <!-- Sidebar Bottom -->
+        <div class="sidebar-bottom">
+
+            <button
+                class="icon-btn"
+                id="themeBtn"
+                title="Change Theme"
+            >
+                ◐
+            </button>
+
+           <a href="{{ url_for('logout') }}" class="logout-btn">
+              Logout
+            </a>
+
+        </div>
+
+    </aside>
+
+    <!-- =====================================================
+         MAIN CONTENT
+    ====================================================== -->
+
+    <main id="app">
+
+       <div id="user-data"
+     data-name="{{ username|e }}"
+     style="display:none;">
+     </div>
+
+    </main>
+
+
+    <!-- =====================================================
+         DASHBOARD JAVASCRIPT
+    ====================================================== -->
+
+    <script
+        src="{{ url_for('static', filename='js/das.js') }}"
+    ></script>
+
+</body>
+
+</html>

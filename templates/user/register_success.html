@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registration Successful</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+    --ink:#e9f3fb; --mute:#8fa9bd; --line:rgba(140,190,220,.22);
+    --cyan:#22d3ee; --cyan2:#0ea5e9; --ok:#34d399;
+}
+*{box-sizing:border-box;}
+body{
+    margin:0; min-height:100vh; padding:14px; display:flex; align-items:center; justify-content:center;
+    color:var(--ink); font-family:"Poppins",sans-serif;
+    background: linear-gradient(135deg, #030b16 0%, #071827 45%, #06111f 100%);
+}
+.card{
+    width:100%; max-width:440px; padding:35px 25px; text-align:center; border-radius:18px;
+    border:1px solid rgba(140,190,220,.25); background:rgba(8,22,38,.85);
+    box-shadow:0 30px 70px rgba(0,0,0,.55);
+}
+.badge{
+    width:60px; height:60px; margin:0 auto 18px; display:grid; place-items:center; border-radius:50%;
+    border:1px solid rgba(52,211,153,.5); background:rgba(52,211,153,0.12); color: var(--ok);
+}
+h1{margin:0 0 12px; font-size:21px; font-weight:600; color:var(--ink);}
+.msg-box{
+    background: rgba(34,211,238,0.06); border: 1px solid rgba(34,211,238,0.2);
+    padding: 12px 15px; border-radius: 10px; margin-bottom: 20px;
+}
+.msg-box p{margin:0; font-size:13.5px; color:var(--ink); line-height:1.5;}
+.msg-box span{color:var(--cyan); font-weight:600;}
+.sub-text{font-size:12px; color:var(--mute); margin-bottom:22px;}
+.btn-login {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 10px 24px; border-radius: 8px; font-family: "Poppins", sans-serif;
+    font-size: 12.5px; font-weight: 600; letter-spacing: .8px; color: #03202b; text-decoration: none;
+    background: linear-gradient(90deg, var(--cyan), var(--cyan2));
+    box-shadow: 0 5px 15px rgba(14,165,233,0.3);
+}
+.btn-login:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+
+<main class="card">
+    <div class="badge">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+    </div>
+    
+    <h1>Registration Successful!</h1>
+    
+    <div class="msg-box">
+        <p>User <span>{{ username }}</span> have successfully completed registration.</p>
+    </div>
+    
+    <p class="sub-text">You can now access your account and start using the web portal securely.</p>
+    
+    <a href="{{ url_for('user_login') }}" class="btn-login">LOGIN NOW</a>
+</main>
+
+</body>
+</html>

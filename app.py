@@ -1,6 +1,7 @@
 from flask import (Flask, request, render_template, redirect, url_for,
                    session, jsonify, send_file)
 from flask_mysqldb import MySQL
+from urllib.parse import urlparse
 import MySQLdb.cursors
 import bcrypt
 import config
@@ -14,7 +15,7 @@ import uuid
 from datetime import datetime, date
 from functools import wraps
 from importlib.metadata import version as package_version
-
+from urllib.parse import urlparse
 app = Flask(__name__)
 
 # =========================================================

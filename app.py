@@ -591,7 +591,7 @@ def api_user_me():
 @app.route("/api/user/files")
 @user_required
 def api_user_files():
-    db_user_id = session.get("user_id")
+    db_user_id = session.get("db_user_id")
     if not db_user_id:
         return []
 

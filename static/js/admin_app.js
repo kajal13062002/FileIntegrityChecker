@@ -39,7 +39,10 @@ async function api(method, url, body) {
         options.headers['Content-Type'] = 'application/json';
         options.body = JSON.stringify(body);
     }
-    const response = await fetch(url, options);
+   const response = await fetch(url, {
+    ...options,
+    cache: 'no-store'
+});
     let data = {};
     try { data = await response.json(); } catch (error) { /* no JSON body */ }
     if (response.status === 401) { window.location.href = '/admin'; throw new Error('Session expired'); }
@@ -634,7 +637,19 @@ byId('logout').onclick = () => {
     window.location.href = '/logout';
 };
 
-render();                                   // shows "Loading…"
-loadData()
-    .then(render)
-    .catch(error => { state.loadError = error.message; render(); });
+    render();                                   // shows "Loading…"
+
+async function refreshAdminData() {
+    try {
+        await loadData();
+        render();
+    } catch (error) {
+        state.loadError = error.message;
+        render();
+    }
+}
+
+refreshAdminData();
+
+// Automatically get latest Aiven data every 5 seconds
+setInterval(refreshAdminData, 5000);

@@ -17,7 +17,9 @@ from functools import wraps
 from importlib.metadata import version as package_version
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
+print("DATABASE_URL:", bool(os.environ.get("DATABASE_URL")))
+
 app = Flask(__name__)
 
 # =========================================================
@@ -51,7 +53,9 @@ else:
     app.config["MYSQL_DB"] = config.MYSQL_DB
 
 mysql = MySQL(app)
-
+print("DB HOST:", app.config["MYSQL_HOST"])
+print("DB PORT:", app.config["MYSQL_PORT"])
+print("DB NAME:", app.config["MYSQL_DB"])
 
 
 def log_activity(user_id, username, activity, activity_type):

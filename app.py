@@ -1,6 +1,7 @@
 from flask import (Flask, request, render_template, redirect, url_for,
                    session, jsonify, send_file)
 from flask_mysqldb import MySQL
+import urllib.parse
 from urllib.parse import urlparse
 import MySQLdb.cursors
 import bcrypt

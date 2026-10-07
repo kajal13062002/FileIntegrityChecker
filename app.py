@@ -15,7 +15,9 @@ import uuid
 from datetime import datetime, date
 from functools import wraps
 from importlib.metadata import version as package_version
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
 
 # =========================================================

@@ -8,14 +8,13 @@ import config
 import csv
 import hashlib
 import os
-import urllib.parse
 import platform
 import re
 import uuid
 from datetime import datetime, date
 from functools import wraps
 from importlib.metadata import version as package_version
-from urllib.parse import urlparse
+
 app = Flask(__name__)
 
 # =========================================================

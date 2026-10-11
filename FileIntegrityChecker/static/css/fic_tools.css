@@ -1,0 +1,456 @@
+/* ==========================================================================
+   fic_tools.css  -  styles for static/js/fic_tools.js
+   Works with BOTH consoles: it reads their colour variables
+   (user: --muted / --blue,  admin: --mut / --bl) and falls back to defaults.
+   ========================================================================== */
+
+.fic,
+.fic-drop,
+.fic-progress {
+    --f-ink: var(--ink, #1e293b);
+    --f-muted: var(--muted, var(--mut, #64748b));
+    --f-card: var(--card, #ffffff);
+    --f-line: var(--line, #e2e8f0);
+    --f-blue: var(--blue, var(--bl, #2563eb));
+    --f-sky: var(--sky, var(--sk, #38bdf8));
+    --f-soft: rgba(100, 116, 139, 0.12);
+    --f-green: #22c55e;
+    --f-amber: #f59e0b;
+    --f-red: #ef4444;
+    color: var(--f-ink);
+}
+
+.fic *, .fic *::before, .fic *::after { box-sizing: border-box; }
+
+/* ---------- cards / headings ---------- */
+
+.fic-card {
+    background: var(--f-card);
+    border: 1px solid var(--f-line);
+    border-radius: 16px;
+    padding: 18px;
+    margin: 0 0 16px;
+    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.06);
+}
+.fic-card.fic-flush { padding: 0; overflow: hidden; }
+.fic-card-head {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    font-weight: 700; margin-bottom: 12px;
+}
+.fic-flush > .fic-card-head { padding: 16px 18px 0; margin-bottom: 8px; }
+.fic-card-head small { font-weight: 500; color: var(--f-muted); }
+.fic-h { margin: 18px 0 6px; font-size: 15px; font-weight: 700; }
+.fic-card > .fic-h:first-child { margin-top: 0; }
+.fic-note { color: var(--f-muted); font-size: 13.5px; margin: 0 0 12px; }
+.fic-empty, .fic-empty-cell { color: var(--f-muted); text-align: center; padding: 22px 12px; }
+.fic-mini { color: var(--f-muted); font-size: 12px; }
+.fic-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 4px 0 16px; }
+.fic-row.fic-tight { margin: 0; gap: 6px; }
+.fic-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.fic-or { text-align: center; color: var(--f-muted); margin: 12px 0; position: relative; font-weight: 600; }
+.fic-or span { background: var(--f-card); padding: 0 12px; position: relative; }
+.fic-or::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--f-line); }
+
+.fic-textarea {
+    width: 100%; min-height: 96px; resize: vertical; padding: 12px 14px;
+    border-radius: 12px; border: 1px solid var(--f-line);
+    background: transparent; color: var(--f-ink); font: inherit;
+}
+.fic-textarea:focus { outline: 2px solid var(--f-blue); outline-offset: 1px; }
+
+/* ---------- buttons ---------- */
+
+.fic-btn {
+    border: 0; cursor: pointer; padding: 10px 20px; border-radius: 10px;
+    background: var(--f-blue); color: #fff; font-weight: 700; font-size: 14px;
+}
+.fic-btn:hover { filter: brightness(1.08); }
+.fic-btn:disabled { opacity: .55; cursor: wait; }
+.fic-btn-light { background: var(--f-soft); color: var(--f-ink); }
+.fic-btn-red { background: var(--f-red); }
+.fic-btn-sm { padding: 6px 12px; font-size: 12.5px; border-radius: 8px; }
+
+/* ---------- drop zone with preview ---------- */
+
+.fic-drop {
+    position: relative; border: 2px dashed var(--f-line); border-radius: 16px;
+    min-height: 150px; padding: 18px; display: flex; align-items: center; justify-content: center;
+    text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.fic-drop:hover, .fic-drop.dragging { border-color: var(--f-blue); background: rgba(37, 99, 235, 0.06); }
+.fic-drop.has-file { border-style: solid; padding: 12px; }
+.fic-drop-idle { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.fic-drop-idle[hidden], .fic-drop-prev[hidden], .fic-drop-clear[hidden] { display: none; }
+.fic-drop-ico { font-size: 34px; line-height: 1; }
+.fic-drop-idle b { font-size: 16px; }
+.fic-drop-idle small { color: var(--f-muted); }
+.fic-drop-clear {
+    position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border-radius: 50%;
+    border: 0; cursor: pointer; background: rgba(15, 23, 42, .75); color: #fff; font-size: 13px; z-index: 2;
+}
+.fic-drop-prev { width: 100%; display: flex; justify-content: center; }
+.fic-drop-prev.multi { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+
+.fic-thumb {
+    position: relative; border-radius: 12px; overflow: hidden; background: var(--f-soft);
+    height: 110px; display: flex; align-items: center; justify-content: center;
+}
+.fic-thumb.big { height: 200px; width: 100%; }
+.fic-thumb img, .fic-thumb video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+.fic-thumb img { background: transparent; }
+.fic-badge {
+    position: absolute; left: 6px; bottom: 6px; padding: 2px 9px; border-radius: 99px;
+    background: rgba(15, 23, 42, .78); color: #fff; font-size: 11px; font-weight: 600; text-transform: uppercase;
+}
+.fic-play {
+    position: absolute; width: 38px; height: 38px; border-radius: 50%; background: rgba(15, 23, 42, .6);
+    color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; padding-left: 3px;
+}
+.fic-doc-ico {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 64px; height: 76px;
+    border-radius: 10px; font-weight: 800; font-size: 18px; color: #fff; background: #64748b; padding: 0 10px;
+}
+.fic-doc-ico.pdf { background: #dc2626; }
+.fic-doc-ico.document { background: #2563eb; }
+.fic-doc-ico.audio { background: #7c3aed; }
+.fic-more { display: flex; align-items: center; justify-content: center; color: var(--f-muted); font-weight: 700; }
+
+/* ---------- progress bars ---------- */
+
+.fic-progress { margin: 6px 0 16px; }
+.fic-progress-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: var(--f-muted); }
+.fic-progress-top b { color: var(--f-ink); }
+.fic-bar { height: 12px; border-radius: 99px; background: var(--f-soft); overflow: hidden; display: flex; }
+.fic-bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--f-blue), var(--f-sky)); transition: width .2s; }
+.fic-bar.busy > i { background: linear-gradient(90deg, var(--f-blue), var(--f-sky), var(--f-blue)); background-size: 200% 100%; animation: fic-busy 1.1s linear infinite; }
+@keyframes fic-busy { from { background-position: 0 0; } to { background-position: -200% 0; } }
+.fic-bar-split > i.safe { background: var(--f-green); }
+.fic-bar-split > i.bad { background: var(--f-red); }
+.fic-split-labels { display: flex; justify-content: space-between; font-weight: 700; font-size: 13.5px; margin-bottom: 6px; }
+.fic-split-labels .g { color: var(--f-green); }
+.fic-split-labels .r { color: var(--f-red); }
+
+/* ---------- verdict banner + stat tiles ---------- */
+
+.fic-verdict {
+    border-radius: 16px; padding: 16px 20px; margin: 0 0 16px;
+    border: 1px solid var(--f-line); background: var(--f-soft);
+}
+.fic-verdict h3 { margin: 0 0 4px; font-size: 18px; }
+.fic-verdict p { margin: 0; color: var(--f-muted); }
+.fic-verdict.ok { background: rgba(34, 197, 94, .12); border-color: rgba(34, 197, 94, .45); }
+.fic-verdict.ok h3 { color: var(--f-green); }
+.fic-verdict.bad { background: rgba(239, 68, 68, .1); border-color: rgba(239, 68, 68, .45); }
+.fic-verdict.bad h3 { color: var(--f-red); }
+
+.fic-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+.fic-stat { background: var(--f-soft); border-radius: 12px; padding: 12px 14px; }
+.fic-stat b { display: block; font-size: 22px; }
+.fic-stat b em { font-style: normal; font-size: 13px; color: var(--f-muted); font-weight: 600; }
+.fic-stat span { color: var(--f-muted); font-size: 12.5px; }
+
+/* ---------- tables ---------- */
+
+.fic-table-wrap { overflow-x: auto; }
+.fic-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.fic-table th {
+    text-align: left; padding: 11px 16px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--f-muted); border-bottom: 1px solid var(--f-line); white-space: nowrap;
+}
+.fic-table td { padding: 11px 16px; border-bottom: 1px solid var(--f-line); vertical-align: top; }
+.fic-table tr:last-child td { border-bottom: 0; }
+.fic-table tr.fic-sub td { padding-top: 0; background: var(--f-soft); }
+.fic-table details summary { cursor: pointer; padding: 8px 0; color: var(--f-blue); font-weight: 600; font-size: 13px; }
+
+.fic-hash, .fic-table code, .fic-kv code {
+    font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 12.5px; word-break: break-all;
+}
+.fic-algo {
+    display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 700;
+    background: rgba(37, 99, 235, .14); color: var(--f-blue); white-space: nowrap;
+}
+.fic-no {
+    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px;
+    background: #facc15; color: #000; font-weight: 800; font-size: 12px;
+}
+
+.fic-pill {
+    display: inline-block; padding: 2px 11px; border-radius: 99px; font-size: 12px; font-weight: 700;
+    background: rgba(37, 99, 235, .14); color: var(--f-blue); text-transform: capitalize; white-space: nowrap;
+}
+.fic-pill.fic-safe, .fic-pill.fic-match, .fic-pill.fic-same { background: rgba(34, 197, 94, .16); color: #16a34a; }
+.fic-pill.fic-modified, .fic-pill.fic-different { background: rgba(245, 158, 11, .18); color: #d97706; }
+.fic-pill.fic-tampered, .fic-pill.fic-mismatch { background: rgba(239, 68, 68, .16); color: #dc2626; }
+.fic-pill.fic-only-in-PDF-1, .fic-pill.fic-only-in-PDF-2 { background: rgba(239, 68, 68, .16); color: #dc2626; }
+
+.fic-diffline { padding: 8px 0; border-top: 1px dashed var(--f-line); font-size: 13px; }
+.fic-diffline:first-of-type { border-top: 0; }
+.fic-diffline .old { color: #dc2626; }
+.fic-diffline .new { color: #16a34a; }
+.fic-tag { display: inline-block; font-size: 10.5px; font-weight: 800; text-transform: uppercase; padding: 1px 8px; border-radius: 6px; margin-bottom: 3px; background: var(--f-soft); }
+
+/* ---------- hash tool ---------- */
+
+.fic-algo-menu { display: grid; gap: 12px; margin-bottom: 16px; }
+.fic-algo-group small { display: block; color: var(--f-muted); font-weight: 700; margin-bottom: 6px; text-transform: uppercase; font-size: 11px; letter-spacing: .05em; }
+.fic-radios { display: flex; flex-wrap: wrap; gap: 8px; }
+.fic-radio { cursor: pointer; }
+.fic-radio input { position: absolute; opacity: 0; pointer-events: none; }
+.fic-radio span {
+    display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 10px;
+    border: 1px solid var(--f-line); font-weight: 600; font-size: 13.5px; transition: all .12s;
+}
+.fic-radio span::before {
+    content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--f-muted); flex: none;
+}
+.fic-radio:hover span { border-color: var(--f-blue); }
+.fic-radio input:checked + span { border-color: var(--f-blue); background: rgba(37, 99, 235, .12); color: var(--f-blue); }
+.fic-radio input:checked + span::before { border-color: var(--f-blue); background: radial-gradient(circle, var(--f-blue) 45%, transparent 50%); }
+.fic-radio input:focus-visible + span { outline: 2px solid var(--f-blue); outline-offset: 2px; }
+.fic-radio-all input:checked + span { border-color: var(--f-green); background: rgba(34, 197, 94, .13); color: #16a34a; }
+.fic-radio-all input:checked + span::before { border-color: var(--f-green); background: radial-gradient(circle, var(--f-green) 45%, transparent 50%); }
+
+.fic-digest { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.fic-digest .fic-hash { flex: 1; min-width: 200px; padding: 10px 14px; background: var(--f-soft); border-radius: 10px; }
+
+.fic-steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.fic-step { display: flex; gap: 14px; padding-bottom: 18px; position: relative; }
+.fic-step:not(:last-child)::before {
+    content: ""; position: absolute; left: 15px; top: 34px; bottom: 0; width: 2px; background: var(--f-line);
+}
+.fic-step-n {
+    flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--f-blue); color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px;
+}
+.fic-step-b { flex: 1; min-width: 0; }
+.fic-step-b h5 { margin: 4px 0 4px; font-size: 15px; }
+.fic-step-b p { margin: 0 0 8px; color: var(--f-muted); font-size: 13.5px; }
+.fic-kvs { background: var(--f-soft); border-radius: 10px; padding: 6px 12px; }
+.fic-kv { display: flex; gap: 12px; padding: 5px 0; border-bottom: 1px dashed var(--f-line); }
+.fic-kv:last-child { border-bottom: 0; }
+.fic-kv span { flex: 0 0 190px; color: var(--f-muted); font-size: 12.5px; }
+.fic-kv code { flex: 1; min-width: 0; }
+.fic-ok-note { margin-top: 4px; padding: 10px 14px; border-radius: 10px; background: rgba(34, 197, 94, .12); color: #16a34a; font-weight: 600; font-size: 13.5px; }
+
+/* ---------- compare ---------- */
+
+.fic-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; padding: 5px; border-radius: 14px; background: var(--f-soft); width: fit-content; max-width: 100%; }
+.fic-tabs button {
+    border: 0; background: transparent; color: var(--f-muted); font-weight: 700; padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 14px;
+}
+.fic-tabs button.on { background: var(--f-card); color: var(--f-blue); box-shadow: 0 2px 8px rgba(15, 23, 42, .12); }
+
+.fic-imgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+.fic-imgs figure { margin: 0; background: var(--f-card); border: 1px solid var(--f-line); border-radius: 14px; padding: 10px; }
+.fic-imgs img { width: 100%; height: auto; border-radius: 8px; display: block; }
+.fic-imgs figcaption { margin-top: 8px; font-size: 12.5px; color: var(--f-muted); text-align: center; }
+.fic-imgs figure.hl { border-color: rgba(239, 68, 68, .5); }
+
+/* ---------- charts ---------- */
+
+.fic-chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+.fic-chart-grid .fic-card { margin: 0; }
+.fic-donut-row { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.fic-donut-legend div { display: flex; align-items: center; gap: 8px; margin: 4px 0; color: var(--f-muted); }
+.fic-donut-legend b { color: var(--f-ink); margin-left: auto; padding-left: 12px; }
+.fic-donut-legend i, .fic-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.fic-legend { display: flex; gap: 14px; justify-content: center; font-size: 12px; color: var(--f-muted); margin-top: 6px; }
+.fic-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fic-columns { width: 100%; height: auto; max-height: 220px; }
+.fic-hbars { display: grid; gap: 9px; }
+.fic-hbar { display: grid; grid-template-columns: minmax(70px, 120px) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.fic-hbar-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--f-muted); }
+.fic-hbar-t { height: 10px; border-radius: 99px; background: var(--f-soft); overflow: hidden; }
+.fic-hbar-t i { display: block; height: 100%; border-radius: 99px; background: var(--f-blue); }
+
+/* ---------- small screens ---------- */
+
+@media (max-width: 800px) {
+    .fic-two { grid-template-columns: 1fr; }
+    .fic-imgs { grid-template-columns: 1fr; }
+    .fic-kv { flex-direction: column; gap: 2px; }
+    .fic-kv span { flex: none; }
+}
+
+.fic-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.fic-side .old, .fic-side .new { padding: 8px 10px; border-radius: 8px; word-break: break-word; }
+.fic-side .old { background: rgba(239, 68, 68, .1); }
+.fic-side .new { background: rgba(34, 197, 94, .1); }
+.fic-imgs.fic-two-up { grid-template-columns: 1fr 1fr; }
+.fic-thumb canvas { display: block; }
+@media (max-width: 800px) { .fic-side, .fic-imgs.fic-two-up { grid-template-columns: 1fr; } }
+
+.fic-chart-head { justify-content: space-between; align-items: center; }
+.fic-chart-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.fic-chart-tabs button {
+    border: 0; cursor: pointer; padding: 4px 10px; border-radius: 8px; font-size: 11.5px; font-weight: 700;
+    background: var(--f-soft); color: var(--f-muted);
+}
+.fic-chart-tabs button.on { background: var(--f-blue); color: #fff; }
+.fic-lg-l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+.fic-donut-legend small { color: var(--f-muted); font-weight: 600; }
+.fic-chart-body { min-height: 190px; }
+.fic-chart-body circle, .fic-chart-body rect, .fic-chart-body path { transition: opacity .12s; }
+.fic-chart-body rect:hover, .fic-chart-body path:hover { opacity: .8; }
+.fic-donut-legend { font-size: 13px; }
+.fic-chart-tabs button { padding: 3px 8px; font-size: 11px; }
+
+/* ================= professional report look ================= */
+.fic-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 16px; }
+.fic-kpi {
+    --k: #6366f1; display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 18px;
+    background: var(--f-card); border: 1px solid var(--f-line); position: relative; overflow: hidden;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, .07);
+}
+.fic-kpi::after { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: linear-gradient(90deg, var(--k), transparent); }
+.fic-kpi.blue { --k: #3b82f6; } .fic-kpi.green { --k: #10b981; } .fic-kpi.amber { --k: #f59e0b; }
+.fic-kpi.red { --k: #ef4444; } .fic-kpi.violet { --k: #8b5cf6; } .fic-kpi.cyan { --k: #06b6d4; }
+.fic-kpi-ico {
+    width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 20px; flex: none;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--k) 28%, transparent), color-mix(in srgb, var(--k) 8%, transparent));
+}
+.fic-kpi b { display: block; font-size: 24px; line-height: 1.1; letter-spacing: -.02em; }
+.fic-kpi small { color: var(--f-muted); font-weight: 600; font-size: 12px; }
+
+.fic-chart-grid .fic-card {
+    position: relative; border-radius: 20px; padding: 18px 18px 14px; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, .08); transition: transform .18s, box-shadow .18s;
+}
+.fic-chart-grid .fic-card::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 3px;
+    background: linear-gradient(90deg, #6366f1, #22d3ee, #10b981);
+}
+.fic-chart-grid .fic-card:hover { transform: translateY(-2px); box-shadow: 0 16px 38px rgba(15, 23, 42, .14); }
+.fic-chart-title { font-size: 15px; letter-spacing: -.01em; }
+.fic-chart-tabs { background: var(--f-soft); padding: 3px; border-radius: 11px; gap: 2px; }
+.fic-chart-tabs button { background: transparent; border-radius: 8px; padding: 4px 9px; transition: all .15s; }
+.fic-chart-tabs button:hover { color: var(--f-ink); }
+.fic-chart-tabs button.on { background: linear-gradient(135deg, #6366f1, #3b82f6); color: #fff; box-shadow: 0 3px 10px rgba(99, 102, 241, .4); }
+
+.fic-legend-list { display: grid; gap: 6px; min-width: 140px; flex: 1; }
+.fic-lg-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 5px 9px; border-radius: 9px; background: var(--f-soft); }
+.fic-lg-row i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.fic-lg-row .fic-lg-l { flex: 1; color: var(--f-muted); min-width: 0; }
+.fic-lg-row b { font-weight: 800; }
+.fic-lg-row em { font-style: normal; font-size: 11px; color: var(--f-muted); font-weight: 700; min-width: 32px; text-align: right; }
+.fic-donut-row { justify-content: center; }
+
+.fic-empty-chart { display: grid; place-items: center; gap: 6px; min-height: 170px; color: var(--f-muted); font-size: 13px; }
+.fic-empty-chart span { font-size: 30px; opacity: .5; }
+
+.fic-seg { transition: filter .15s, transform .15s; cursor: pointer; }
+.fic-seg:hover { filter: brightness(1.15) drop-shadow(0 4px 8px rgba(0, 0, 0, .3)); }
+path.fic-seg { transform-origin: 60px 60px; }
+path.fic-seg:hover { transform: scale(1.045); }
+.fic-columns [data-tip] { cursor: pointer; transition: opacity .12s; }
+.fic-columns path[data-tip]:hover, .fic-columns rect[data-tip]:hover { filter: brightness(1.18); }
+.fic-halo { transition: r .15s; }
+
+.fic-tip {
+    position: fixed; z-index: 99999; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: rgba(15, 23, 42, .94); color: #fff; padding: 7px 12px; border-radius: 10px; font-size: 12px; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35); max-width: 260px; backdrop-filter: blur(6px);
+}
+
+@keyframes fic-grow { from { transform: scaleY(0); opacity: .2; } to { transform: scaleY(1); opacity: 1; } }
+@keyframes fic-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes fic-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fic-popin { from { transform: scale(.82) rotate(-25deg); opacity: 0; } to { transform: none; opacity: 1; } }
+.fic-grow { transform-box: fill-box; transform-origin: 50% 100%; animation: fic-grow .7s cubic-bezier(.2, .9, .25, 1) both; }
+.fic-draw { stroke-dasharray: 1; animation: fic-draw 1.1s ease-out both; }
+.fic-fade { animation: fic-fade 1.2s ease-out both; }
+.fic-pop { animation: fic-popin .7s cubic-bezier(.2, .9, .25, 1) both; }
+@media (prefers-reduced-motion: reduce) { .fic-grow, .fic-draw, .fic-fade, .fic-pop { animation: none; } }
+
+.fic-chart-tabs button { padding: 4px 8px; font-size: 11px; }
+.fic > .fic-chart-grid:first-child { margin-top: 20px; }
+
+/* ================= heatmap ================= */
+.fic-chart-grid .fic-heat-card { grid-column: 1 / -1; }
+.fic-heat-bar { display: flex; gap: 10px; flex-wrap: wrap; margin: -2px 0 14px; }
+.fic-heat-body { overflow-x: auto; padding: 4px 2px 8px; }
+.fic-hgrid { display: grid; gap: 4px; align-items: center; min-width: 420px; }
+.fic-hh { font-size: 10px; color: var(--f-muted); text-align: center; font-weight: 600; }
+.fic-hl { font-size: 12px; color: var(--f-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; font-weight: 600; }
+.fic-hc {
+    display: block; height: 26px; border-radius: 7px; cursor: pointer; min-width: 8px;
+    transition: transform .12s, box-shadow .12s; animation: fic-cellin .5s cubic-bezier(.2, .9, .25, 1) both;
+}
+.fic-hc:hover { transform: scale(1.22); box-shadow: 0 6px 16px rgba(0, 0, 0, .35); position: relative; z-index: 2; }
+.fic-hc.fic-hide { visibility: hidden; }
+@keyframes fic-cellin { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .fic-hc { animation: none; } }
+.fic-cal { display: flex; gap: 8px; min-width: 340px; }
+.fic-cal-days { display: grid; grid-template-rows: repeat(7, 14px); gap: 4px; margin-top: 20px; font-size: 10px; color: var(--f-muted); font-weight: 600; }
+.fic-cal-months { display: grid; gap: 0; margin-bottom: 4px; height: 16px; font-size: 10px; color: var(--f-muted); font-weight: 600; }
+.fic-cal-months span { white-space: nowrap; }
+.fic-cal-grid { display: grid; grid-template-rows: repeat(7, 14px); grid-auto-flow: column; gap: 4px; }
+.fic-cal-grid .fic-hc { height: 14px; width: 14px; border-radius: 4px; }
+.fic-heat-foot { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--f-line); }
+.fic-heat-scale { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--f-muted); }
+.fic-heat-scale i { width: 16px; height: 16px; border-radius: 5px; display: block; }
+.fic-heat-scale span:first-child { margin-right: 4px; } .fic-heat-scale span:last-child { margin-left: 4px; }
+.fic-heat-ins { display: flex; gap: 8px; flex-wrap: wrap; }
+.fic-heat-ins span { font-size: 12px; padding: 4px 11px; border-radius: 99px; background: var(--f-soft); color: var(--f-muted); }
+.fic-heat-ins b { color: var(--f-ink); }
+.fic-cal-days { grid-template-rows: repeat(7, 16px); }
+.fic-cal-grid { grid-template-rows: repeat(7, 16px); }
+.fic-cal-grid .fic-hc { height: 16px; width: 16px; }
+
+/* ================= page load preview ================= */
+.fic-load {
+    position: fixed; inset: 0; z-index: 100000; display: grid; place-items: center;
+    background: radial-gradient(circle at 30% 20%, #12224a, #060d1f 70%); color: #e6efff;
+    transition: opacity .45s, visibility .45s;
+}
+.fic-load.hide { opacity: 0; visibility: hidden; }
+.fic-load-card { width: min(380px, 88vw); text-align: center; }
+.fic-load-logo {
+    width: 68px; height: 68px; margin: 0 auto 14px; border-radius: 20px; display: grid; place-items: center; font-size: 32px;
+    background: linear-gradient(135deg, #3b82f6, #22d3ee); box-shadow: 0 12px 40px rgba(59, 130, 246, .45);
+    animation: fic-pulse 1.6s ease-in-out infinite;
+}
+@keyframes fic-pulse { 50% { transform: scale(1.07); box-shadow: 0 16px 50px rgba(34, 211, 238, .5); } }
+.fic-load h3 { margin: 0 0 18px; font-size: 18px; letter-spacing: -.01em; }
+.fic-load-bar { height: 10px; border-radius: 99px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+.fic-load-bar i { display: block; width: 0; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #6366f1, #22d3ee, #10b981); }
+.fic-load-meta { display: flex; justify-content: space-between; margin: 8px 2px 14px; font-size: 13px; color: #8ea2c9; }
+.fic-load-meta b { color: #fff; font-size: 15px; }
+.fic-load-list { list-style: none; margin: 0; padding: 0; text-align: left; display: grid; gap: 7px; font-size: 13px; color: #8ea2c9; }
+.fic-load-list li { display: flex; align-items: center; gap: 10px; }
+.fic-load-list .tick { width: 18px; height: 18px; border-radius: 50%; border: 2px solid #2b3f72; display: grid; place-items: center; font-size: 10px; flex: none; }
+.fic-load-list li.ok { color: #e6efff; }
+.fic-load-list li.ok .tick { background: #10b981; border-color: #10b981; color: #fff; }
+.fic-load-list li.ok .tick::after { content: "✓"; }
+@media (prefers-reduced-motion: reduce) { .fic-load-logo { animation: none; } }
+
+.report-actions { display: inline-flex; gap: 10px; flex-wrap: wrap; }
+.report-actions.top { margin: -6px 0 18px; }
+.report-actions .btn { text-decoration: none; display: inline-block; }
+
+/* ================= resumable upload panel ================= */
+.up-panel { margin-top: 20px; }
+.up-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.up-head h3 { margin: 0; font-size: 16px; }
+.up-note {
+    margin-bottom: 12px; padding: 10px 14px; border-radius: 12px; font-size: 13px;
+    background: rgba(59, 130, 246, .12); border: 1px solid rgba(59, 130, 246, .35); color: var(--blue, #3b82f6);
+}
+.up-job {
+    --u: #3b82f6; display: flex; gap: 14px; align-items: center; padding: 14px 16px; margin-bottom: 12px; border-radius: 16px;
+    background: var(--card, #fff); border: 1px solid var(--line, #e2e8f0); box-shadow: 0 6px 20px rgba(15, 23, 42, .06);
+}
+.up-job.error { --u: #ef4444; } .up-job.paused { --u: #f59e0b; } .up-job.queued { --u: #8b5cf6; }
+.up-ico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 22px; flex: none;
+    background: color-mix(in srgb, var(--u) 16%, transparent); }
+.up-body { flex: 1; min-width: 0; }
+.up-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.up-top b { text-transform: capitalize; }
+.up-chip { font-size: 11px; font-weight: 800; padding: 2px 10px; border-radius: 99px; background: color-mix(in srgb, var(--u) 18%, transparent); color: var(--u); }
+.up-bar { height: 10px; border-radius: 99px; background: rgba(128, 140, 165, .2); overflow: hidden; }
+.up-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--u), #22d3ee); transition: width .25s; }
+.up-bar.busy i { background: linear-gradient(90deg, var(--u), #22d3ee, var(--u)); background-size: 200% 100%; animation: fic-busy 1.1s linear infinite; }
+.up-meta { display: flex; justify-content: space-between; margin-top: 7px; font-size: 12.5px; color: var(--muted, #64748b); gap: 10px; }
+.up-meta b { color: var(--ink, #1e293b); }
+.up-actions { display: flex; gap: 6px; flex: none; }
+@media (max-width: 600px) { .up-job { flex-wrap: wrap; } .up-actions { width: 100%; justify-content: flex-end; } }

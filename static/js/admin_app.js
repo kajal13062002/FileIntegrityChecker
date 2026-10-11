@@ -15,8 +15,9 @@
 
 const state = {
     page: 'dash',
-    settingsTab: 'password',   // password | login | activity | system
+    settingsTab: 'login',      // login | activity | system
     search: '',                // text typed in a search box
+    reportUser: '',            // Reports page: '' = all users, else a user id
     statusFilter: '',          // Manage Files status filter
     expandedFiles: {},         // file ids whose full hash list is open
     editingUserId: null,       // null = adding a new user
@@ -119,6 +120,40 @@ const searchBar = (placeholder, extraHtml = '') => `
 
 
 /* ---------- 3. PAGES ----------------------------------------------------- */
+
+/* one user's report: files, integrity checks, counts */
+function userReportData(user) {
+    const files = state.files.filter(file => file.userId == user.id);
+    const ids = new Set(files.map(file => file.id));
+    const logs = state.integrityLogs.filter(log => ids.has(log.fileId));
+    const count = status => files.filter(file => file.status === status).length;
+    const last = logs.reduce((latest, log) => (log.checkedAt && (!latest || log.checkedAt > latest) ? log.checkedAt : latest), null);
+    return {
+        user, files, logs, last,
+        safe: count('safe'), modified: count('modified'), tampered: count('tampered'),
+        checks: logs.length,
+        score: files.length ? Math.round(100 * count('safe') / files.length) : 100
+    };
+}
+
+function downloadUserCsv(userId) {
+    const user = findUser(userId);
+    if (!user) return;
+    const data = userReportData(user);
+    const cell = value => '"' + String(value == null ? '' : value).replace(/"/g, '""') + '"';
+    const lines = [['file', 'size_bytes', 'algorithms', 'status', 'last_checked', 'checks']].concat(
+        data.files.map(file => [
+            file.name, file.size, Object.keys(file.hashes).join(' '), file.status,
+            file.lastChecked ? file.lastChecked.toISOString() : '',
+            data.logs.filter(log => log.fileId == file.id).length
+        ])
+    ).map(row => row.map(cell).join(','));
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
+    link.download = 'report-' + user.name.replace(/\s+/g, '-').toLowerCase() + '.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
 
 const pages = {
 
@@ -236,7 +271,7 @@ const pages = {
             <div class="card cb" style="margin-top:0;max-width:560px">
                 ${field('Full name', textInput('formName',  user.name,  50))}
                 ${field('Email',     textInput('formEmail', user.email, 50))}
-                ${field(isEditing ? 'New password (leave empty to keep)' : 'Password',
+                ${isEditing ? '' : field('Password',
                         '<input type="password" id="formPassword" maxlength="64" autocomplete="new-password">')}
                 ${field('Phone',     textInput('formPhone', user.phone, 10))}
                 ${field('Gender', `<select id="formGender">
@@ -332,6 +367,17 @@ const pages = {
             </div>`;
     },
 
+    /** Monitor - Tamper & Restore for every stored file. */
+    mon() {
+        const files = state.files.map(file => ({
+            id: file.id, owner: userName(file.userId), name: file.name,
+            size: file.size, status: file.status, lastChecked: file.lastChecked
+        }));
+        return `
+            ${pageTitle('Monitor', 'Tamper a stored file to see the change detected, then restore it.')}
+            ${FIC.monitorHTML(files, { owner: true, empty: 'No files uploaded yet.' })}`;
+    },
+
     reports() {
         const rows = state.reports.slice().reverse().map(report => `
             <tr>
@@ -358,9 +404,88 @@ const pages = {
             <button class="btn" id="generateReport">Generate</button>
             <button class="btn lt" id="copyReports">Copy CSV</button>`;
 
+        const people = state.users.filter(user => user.role === 'user');
+        const selected = state.reportUser ? findUser(state.reportUser) : null;
+        const reportRows = people.map(user => {
+            const r = userReportData(user);
+            return `
+            <tr>
+                <td><b>${escapeHtml(user.name)}</b><div style="color:var(--mut);font-size:12px">${escapeHtml(user.email)}</div></td>
+                <td>${r.files.length}</td>
+                <td>${r.safe}</td>
+                <td>${r.modified}</td>
+                <td>${r.tampered}</td>
+                <td>${r.checks}</td>
+                <td><b>${r.score}%</b></td>
+                <td>${r.last ? formatDateTime(r.last) : '—'}</td>
+                <td>
+                    <button class="btn bs" data-report-user="${user.id}">View report</button>
+                    <button class="btn bs lt" data-user-csv="${user.id}">CSV</button>
+                </td>
+            </tr>`;
+        });
+
+        const scope = selected ? userReportData(selected) : null;
+        const scopedFiles = scope ? scope.files : state.files;
+        const scopedLogs = scope ? scope.logs : state.integrityLogs;
+        const fileRows = scope ? scope.files.map(file => `
+            <tr>
+                <td>${file.id}</td>
+                <td><b>${escapeHtml(file.name)}</b></td>
+                <td>${FIC.size(file.size)}</td>
+                <td>${Object.keys(file.hashes).map(a => `<span class="algo">${escapeHtml(a)}</span>`).join(' ') || '—'}</td>
+                <td>${pill(file.status)}</td>
+                <td>${file.lastChecked ? formatDateTime(file.lastChecked) : '—'}</td>
+                <td>${scope.logs.filter(log => log.fileId == file.id).length}</td>
+            </tr>`) : [];
+
         return `
-            ${pageTitle('Reports', 'System-wide integrity reports.', actions)}
+            ${pageTitle('Reports', 'User-wise and system-wide integrity reports.', actions)}
+
             <div class="card" style="margin-top:0">
+                <div class="ch">User-wise reports</div>
+                ${table(['User', 'Files', 'Safe', 'Modified', 'Tampered', 'Checks', 'Integrity', 'Last check', 'Action'], reportRows, 'No users yet.')}
+            </div>
+
+            <div class="card cb" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px">
+                <b>Showing:</b>
+                <select id="reportUser" style="width:auto;margin:0">
+                    <option value="">All users</option>
+                    ${people.map(user => `<option value="${user.id}" ${String(user.id) === String(state.reportUser) ? 'selected' : ''}>${escapeHtml(user.name)}</option>`).join('')}
+                </select>
+                <span style="color:var(--mut)">${selected ? 'Report of ' + escapeHtml(selected.name) : 'Charts of every user together'}</span>
+            </div>
+
+            ${scope ? '' : FIC.userCharts(people.map(user => {
+                const r = userReportData(user);
+                return {
+                    name: user.name, files: r.files.length,
+                    storage: r.files.reduce((sum, file) => sum + (file.size || 0), 0),
+                    score: r.score, checks: r.checks, bad: r.modified + r.tampered
+                };
+            }))}
+
+            ${FIC.reportCharts({
+                heat: false,
+                files: scopedFiles.map(file => ({
+                    name: file.name, size: file.size, status: file.status,
+                    algorithms: Object.keys(file.hashes)
+                })),
+                checks: scopedLogs.map(log => ({
+                    time: log.checkedAt, status: log.status,
+                    percent: FIC.percentFromRemarks(log.remarks),
+                    file: (findFile(log.fileId) || { name: '—' }).name
+                }))
+            })}
+
+            ${selected ? `
+            <div class="card" style="margin-top:16px">
+                <div class="ch">Files of ${escapeHtml(selected.name)}</div>
+                ${table(['ID', 'File', 'Size', 'Algorithms', 'Status', 'Last checked', 'Checks'], fileRows, 'This user has no files.')}
+            </div>` : ''}
+
+            <div class="card" style="margin-top:16px">
+                <div class="ch">Generated reports</div>
                 ${table(['ID', 'Type', 'Generated By', 'Total', 'Safe', 'Modified', 'Tampered', 'Generated', 'Status', 'Action'], rows, 'No reports yet.')}
             </div>`;
     },
@@ -368,51 +493,43 @@ const pages = {
     /** Admin profile - vertical rows (same style as the user Profile). */
     profile() {
         const admin = state.me;
-        const born = admin.dob ? new Date(admin.dob).toLocaleDateString([], { dateStyle: 'medium' }) : '—';
+        const born = admin.dob ? new Date(admin.dob).toLocaleDateString([], { dateStyle: 'medium' }) : '';
+        const filled = pairs => pairs.filter(pair => pair[1] && pair[1] !== '—');
         const last = admin.lastLogin;
 
         return `
             ${pageTitle('Profile', 'Administrator account information.')}
             <div class="card" style="margin-top:0">
                 <div class="ch">Account details</div>
-                ${keyValueRows([
+                ${keyValueRows(filled([
                     ['Full Name',       escapeHtml(admin.name)],
                     ['Email',           escapeHtml(admin.email)],
                     ['Role',            admin.role],
-                    ['Phone',           escapeHtml(admin.phone || '—')],
-                    ['Gender',          escapeHtml(admin.gender || '—')],
+                    ['Phone',           escapeHtml(admin.phone || '')],
+                    ['Gender',          escapeHtml(admin.gender || '')],
                     ['Date of Birth',   born],
-                    ['City',            escapeHtml(admin.city || '—')],
-                    ['State',           escapeHtml(admin.state || '—')],
+                    ['City',            escapeHtml(admin.city || '')],
+                    ['State',           escapeHtml(admin.state || '')],
                     ['Account Status',  admin.status],
                     ['Account Created', formatDateTime(admin.createdAt)]
-                ])}
+                ]))}
             </div>
             <div class="card" >
                 <div class="ch">Last login</div>
-                ${keyValueRows([
+                ${keyValueRows(filled([
                     ['Login Status',  last ? last.status : '—'],
                     ['IP Address',    last ? escapeHtml(last.ip || '—') : '—'],
                     ['Login Time',    last ? formatDateTime(last.time) : '—'],
                     ['Logout Time',   last && last.logout ? formatDateTime(last.logout) : 'Active session']
-                ])}
+                ]))}
             </div>`;
     },
 
     settings() {
-        const tabs = [['password', 'Password'], ['login', 'Login History'], ['activity', 'System Activity'], ['system', 'System Info']];
+        const tabs = [['login', 'Login History'], ['activity', 'System Activity'], ['system', 'System Info']];
         let content = '';
 
-        if (state.settingsTab === 'password') {
-            content = `
-                <div class="card cb" style="margin-top:0;max-width:520px">
-                    <h4 style="margin-bottom:14px">Change password</h4>
-                    <div><label class="fl">Current password</label><input type="password" id="currentPassword" autocomplete="current-password"></div>
-                    <div><label class="fl">New password</label><input type="password" id="newPassword" autocomplete="new-password"></div>
-                    <div id="passwordMessage" style="min-height:22px;margin:4px 0 10px"></div>
-                    <button class="btn" id="changePassword">Update password</button>
-                </div>`;
-        } else if (state.settingsTab === 'login') {
+        if (state.settingsTab === 'login') {
             const rows = state.logins.map(login => `
                 <tr>
                     <td>${login.id}</td><td>${escapeHtml(login.email)}</td><td>${login.role}</td>
@@ -475,7 +592,7 @@ async function saveUser() {
     const values = {
         name:     byId('formName').value.trim(),
         email:    byId('formEmail').value.trim().toLowerCase(),
-        password: byId('formPassword').value,
+        password: byId('formPassword') ? byId('formPassword').value : '',
         phone:    byId('formPhone').value.trim(),
         gender:   byId('formGender').value,
         dob:      byId('formDob').value,
@@ -578,12 +695,25 @@ function connectPageButtons() {
     document.querySelectorAll('[data-delete-file]').forEach(button => confirmThenDelete(button, () => deleteFile(button.dataset.deleteFile)));
     document.querySelectorAll('[data-delete-report]').forEach(button => confirmThenDelete(button, () => deleteReport(button.dataset.deleteReport)));
 
+    // Monitor (Tamper & Restore) buttons
+    FIC.bindMonitor(
+        (action, id) => '/api/admin/files/' + id + '/' + action,
+        async () => { try { await loadData(); } catch (error) { /* keep old data */ } render(); }
+    );
+
+    document.querySelectorAll('[data-report-user]').forEach(button => button.onclick = () => {
+        state.reportUser = button.dataset.reportUser;
+        render();
+    });
+    document.querySelectorAll('[data-user-csv]').forEach(button => button.onclick = () => downloadUserCsv(button.dataset.userCsv));
+    const reportUser = byId('reportUser');
+    if (reportUser) reportUser.onchange = () => { state.reportUser = reportUser.value; render(); };
+
     onClick('addUser',        () => showUserForm(null));
     onClick('saveUser',       saveUser);
     onClick('scanAll',        scanAllFiles);
     onClick('generateReport', generateReport);
     onClick('copyReports',    copyReportsCsv);
-    onClick('changePassword', changePassword);
 
     const searchBox = byId('searchBox');
     if (searchBox) {

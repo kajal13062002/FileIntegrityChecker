@@ -28,12 +28,20 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.9.3/sha3.min.js"></script>
 
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <!-- Dashboard CSS -->
     <link
         rel="stylesheet"
         href="{{ url_for('static', filename='css/user_dashboard.css') }}"
     >
 
+    <!-- Shared tools CSS (drop zone, compare, hash steps, charts) -->
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='css/fic_tools.css') }}"
+    >
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ai_chat.css') }}">
 </head>
 
 
@@ -183,10 +191,17 @@
          DASHBOARD JAVASCRIPT
     ====================================================== -->
 
+    <script src="{{ url_for('static', filename='js/hash_steps.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/fic_tools.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/uploader.js') }}"></script>
+
     <script
         src="{{ url_for('static', filename='js/das.js') }}"
     ></script>
 
+    <script src="{{ url_for('static', filename='js/ai_chat.js') }}" data-role="user" data-uid="{{ session.get('user_id', '') }}"></script>
 </body>
 
 </html>

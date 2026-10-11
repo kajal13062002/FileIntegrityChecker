@@ -3,46 +3,56 @@ from flask import (Flask, request, render_template, redirect, url_for,
 from flask_mysqldb import MySQL
 import MySQLdb.cursors
 import bcrypt
+import ai_assistant
+import compare_tools
+import report_pdf
 import config
 import csv
 import hashlib
+import json
 import os
+import urllib.parse
+from urllib.parse import urlparse
 import platform
 import re
+import shutil
+import time
 import uuid
 from datetime import datetime, date
 from functools import wraps
 from importlib.metadata import version as package_version
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("1df741b74a5d8428d73f80f34bf7956e997047d6ba85ed2fa28e6303d4d594e0")
+
+# videos, PDFs and images are all accepted - allow up to 200 MB per request
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
+
+
+@app.errorhandler(413)
+def file_too_large(_error):
+    return {"error": "File is too large (maximum 200 MB)."}, 413
+
 # =========================================================
-# APP CONFIG
+# APP CONFIG - LOCAL XAMPP OR RENDER + AIVEN
 # =========================================================
 
-import os
-from urllib.parse import urlparse
-from flask_mysqldb import MySQL
+app.secret_key = os.environ.get("FIC_SECRET_KEY", config.SECRET_KEY)
 
-db_url = os.environ.get("DATABASE_URL")
+_db = config.get_db()
+app.config["MYSQL_HOST"] = _db["host"]
+app.config["MYSQL_PORT"] = _db["port"]
+app.config["MYSQL_USER"] = _db["user"]
+app.config["MYSQL_PASSWORD"] = _db["password"]
+app.config["MYSQL_DB"] = _db["db"]
+if _db["ssl_ca"]:
+    # Aiven requires TLS. The bundled CA certificate is used.
+    app.config["MYSQL_CUSTOM_OPTIONS"] = {"ssl": {"ca": _db["ssl_ca"]}}
 
-if db_url:
-    # Render / Aiven
-    u = urlparse(db_url)
-    app.config['MYSQL_HOST'] = u.hostname
-    app.config['MYSQL_PORT'] = u.port
-    app.config['MYSQL_USER'] = u.username
-    app.config['MYSQL_PASSWORD'] = u.password
-    app.config['MYSQL_DB'] = u.path.lstrip('/')
-    app.config['MYSQL_CUSTOM_OPTIONS'] = {"ssl_mode": "REQUIRED"}
-else:
-    # Local (XAMPP)
-    app.config['MYSQL_HOST'] = 'localhost'
-    app.config['MYSQL_USER'] = 'root'
-    app.config['MYSQL_PASSWORD'] = ''
-    app.config['MYSQL_DB'] = 'file_integrity'
+print(f"[DB] App is using: {_db['label']} -> {_db['host']}:{_db['port']}/{_db['db']}",
+      flush=True)
 
 mysql = MySQL(app)
+
 
 
 def log_activity(user_id, username, activity, activity_type):
@@ -88,6 +98,15 @@ ALGORITHM_NAMES = {
 # only offer what this Python/OpenSSL build can really compute
 ALLOWED_ALGORITHMS = [a for a, n in ALGORITHM_NAMES.items()
                       if n in hashlib.algorithms_available]
+
+
+@app.after_request
+def no_cache(response):
+    """Dashboards and APIs must never be served from the browser cache."""
+    if request.path.startswith(("/api/", "/user/", "/admin")):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 # =========================================================
@@ -275,7 +294,8 @@ def record_check(file_row, result, verification_type):
                 file_id, owner, "safe" if row["match"] else "modified",
                 row["algorithm"], row["stored"], row["calculated"],
                 verification_type, now,
-                "Hash matched" if row["match"] else "Hash mismatch"))
+                ("Hash matched" if row["match"] else "Hash mismatch")
+                + result.get("suffix", "")))
     else:
         _safe_write(history_sql, (
             file_id, owner, status, primary["algorithm"], primary["stored"],
@@ -553,6 +573,19 @@ def user_login():
     return render_template("user/login.html")
 
 
+@app.route("/upload")
+@app.route("/verify")
+@app.route("/hash-tool")
+@app.route("/monitor")
+@app.route("/reports")
+@app.route("/compare")
+def tool_shortcut():
+    """Short URLs for each module - they open the dashboard on that page."""
+    if "user_id" not in session:
+        return redirect(url_for("user_login"))
+    return redirect(url_for("user_dashboard") + "#" + request.path.strip("/"))
+
+
 @app.route("/user/dashboard")
 def user_dashboard():
     if "user_id" not in session:
@@ -584,14 +617,15 @@ def api_user_me():
 @app.route("/api/user/files")
 @user_required
 def api_user_files():
-    db_user_id = session.get("user_id")
+    # files.user_id points at users.id (the mirror id), not users1.id
+    db_user_id = session.get("db_user_id")
     if not db_user_id:
         return []
 
     cursor = dict_cursor()
     cursor.execute(
-        """SELECT id, file_name, file_path, file_size, original_hash,
-                  upload_at, status, last_checked
+        """SELECT id, file_name, file_path, file_size, file_type,
+                  original_hash, upload_at, status, last_checked
            FROM files WHERE user_id=%s ORDER BY id DESC""", (db_user_id,))
     files = cursor.fetchall()
 
@@ -609,6 +643,7 @@ def api_user_files():
     return [{
         "id": f["id"], "name": f["file_name"], "size": f["file_size"] or 0,
         "filepath": f["file_path"], "sha256_hash": f["original_hash"],
+        "type": f["file_type"] or "",
         "upload_date": iso(f["upload_at"]), "status": f["status"] or "safe",
         "last_checked": iso(f["last_checked"]),
         "hashes": hashes.get(f["id"], {}),
@@ -642,46 +677,84 @@ def api_user_history():
     } for r in rows]
 
 
+@app.route("/api/user/report.<fmt>")
+@user_required
+def api_user_report(fmt):
+    """Download the user's integrity report as PDF or CSV."""
+    if fmt not in ("pdf", "csv"):
+        return {"error": "Unknown format"}, 404
+    user = api_user_me()
+    if isinstance(user, tuple):
+        return user
+    file_rows, checks = report_pdf.build_report_data(api_user_files(),
+                                                     api_user_history())
+    stamp = datetime.now().strftime("%Y%m%d")
+    if fmt == "csv":
+        body, mimetype = report_pdf.build_csv(user, file_rows), "text/csv"
+    else:
+        body, mimetype = report_pdf.build_pdf(user, file_rows, checks), "application/pdf"
+    log_activity(f"Downloaded {fmt.upper()} report", "REPORT")
+    return app.response_class(
+        body, mimetype=mimetype,
+        headers={"Content-Disposition":
+                 f"attachment; filename=integrity-report-{stamp}.{fmt}"})
+
+
 @app.route("/api/user/upload", methods=["POST"])
 @user_required
 def api_user_upload():
+    """Small / simple upload (one request). Big files use the chunked API below."""
     upload = request.files.get("file")
     if not upload or not upload.filename:
         return {"error": "No file selected"}, 400
 
-    algorithms = [a for a in request.form.getlist("algorithms") or ["SHA-256"]
-                  if a in ALLOWED_ALGORITHMS]
-    algorithms = list(dict.fromkeys(algorithms))
+    algorithms = clean_algorithms(request.form.getlist("algorithms"))
     if not algorithms:
         return {"error": "No valid hash algorithm selected"}, 400
 
     db_user_id = session.get("db_user_id")
-    print("DB USER ID:", db_user_id)
     if not db_user_id:
         return {"error": "User mapping not found"}, 500
 
-    data = upload.read()
     safe_name = os.path.basename(upload.filename.replace("\\", "/"))
     stored_name = f"{uuid.uuid4().hex}_{safe_name}"
     disk_path = os.path.join(UPLOAD_FOLDER, stored_name)
-    with open(disk_path, "wb") as handle:
-        handle.write(data)
+    upload.save(disk_path)
+    return finalize_upload(disk_path, stored_name, safe_name, algorithms,
+                           db_user_id)
 
-    hashes = {a: hash_bytes(data, a) for a in algorithms}
-    sha256 = hashes.get("SHA-256") or hash_bytes(data, "SHA-256")
+
+def clean_algorithms(requested):
+    algorithms = [a for a in requested or ["SHA-256"] if a in ALLOWED_ALGORITHMS]
+    return list(dict.fromkeys(algorithms))
+
+
+def hash_file_multi(path, algorithms):
+    """Every selected hash in ONE pass over the file (fast for big videos)."""
+    digests = {a: hashlib.new(ALGORITHM_NAMES[a]) for a in algorithms}
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+            for digest in digests.values():
+                digest.update(block)
+    return {a: d.hexdigest() for a, d in digests.items()}
+
+
+def finalize_upload(disk_path, stored_name, safe_name, algorithms, db_user_id):
+    """Hash the stored file and write the DB rows. Returns the JSON answer."""
+    size = os.path.getsize(disk_path)
+    hashes = hash_file_multi(disk_path, algorithms)
+    sha256 = hashes.get("SHA-256") or hash_file(disk_path, "SHA-256")
     extension = os.path.splitext(safe_name)[1].lstrip(".").lower()[:20] or "unknown"
     now = datetime.now()
 
-    print("DB USER ID:", db_user_id, )
     cursor = conn().cursor()
     try:
-
         cursor.execute(
             """INSERT INTO files
                (user_id, file_name, file_path, file_size, file_type,
                 original_hash, hash_algorithm, upload_at, status, last_checked)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (db_user_id, safe_name, "uploads/" + stored_name, len(data),
+            (db_user_id, safe_name, "uploads/" + stored_name, size,
              extension, sha256, "SHA-256", now, "safe", now))
         file_id = cursor.lastrowid
         for algorithm, value in hashes.items():
@@ -690,7 +763,7 @@ def api_user_upload():
                    (file_id, algorithm, hash_value, hash_version, file_size,
                     generated_by, generated_at, hash_status)
                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (file_id, algorithm, value, 1, len(data), db_user_id, now,
+                (file_id, algorithm, value, 1, size, db_user_id, now,
                  "active"))
         conn().commit()
     except Exception as exc:
@@ -708,8 +781,163 @@ def api_user_upload():
          f"Uploaded with {len(hashes)} hash(es)"))
     log_activity(f"Uploaded {safe_name}", "UPLOAD")
 
-    return {"id": file_id, "name": safe_name, "size": len(data),
+    return {"id": file_id, "name": safe_name, "size": size,
             "hashes": hashes, "status": "safe"}
+
+
+# =========================================================
+# RESUMABLE (CHUNKED) UPLOAD
+#   init -> chunk, chunk, ... -> complete
+#   The file is sent in 4 MB pieces. If the page is refreshed or the
+#   connection drops, only the missing pieces are sent again.
+# =========================================================
+
+CHUNK_SIZE = 4 * 1024 * 1024
+MAX_UPLOAD_BYTES = 1024 * 1024 * 1024          # 1 GB per file
+PARTIAL_FOLDER = os.path.join(UPLOAD_FOLDER, "_partial")
+os.makedirs(PARTIAL_FOLDER, exist_ok=True)
+UPLOAD_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _partial_dir(upload_id):
+    return os.path.join(PARTIAL_FOLDER, upload_id)
+
+
+def _load_partial(upload_id):
+    """Meta of a running upload, only if it belongs to the logged-in user."""
+    if not UPLOAD_ID_RE.match(upload_id or ""):
+        return None
+    try:
+        with open(os.path.join(_partial_dir(upload_id), "meta.json")) as handle:
+            meta = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return meta if meta.get("user") == session.get("db_user_id") else None
+
+
+def _received_chunks(upload_id, total):
+    folder = _partial_dir(upload_id)
+    return [i for i in range(total)
+            if os.path.isfile(os.path.join(folder, f"{i}.part"))]
+
+
+def _cleanup_old_partials(max_age_hours=24):
+    limit = datetime.now().timestamp() - max_age_hours * 3600
+    for name in os.listdir(PARTIAL_FOLDER):
+        folder = os.path.join(PARTIAL_FOLDER, name)
+        try:
+            if os.path.getmtime(folder) < limit:
+                shutil.rmtree(folder, ignore_errors=True)
+        except OSError:
+            pass
+
+
+@app.route("/api/user/upload/init", methods=["POST"])
+@user_required
+def api_upload_init():
+    body = request.get_json(silent=True) or {}
+    name = os.path.basename(str(body.get("name", "")).replace("\\", "/"))
+    size = int(body.get("size") or 0)
+    key = re.sub(r"[^A-Za-z0-9_.-]", "", str(body.get("key", "")))[:80]
+    algorithms = clean_algorithms(body.get("algorithms"))
+    db_user_id = session.get("db_user_id")
+
+    if not name:
+        return {"error": "No file selected"}, 400
+    if size <= 0:
+        return {"error": "The file is empty"}, 400
+    if size > MAX_UPLOAD_BYTES:
+        return {"error": "File is too large (maximum 1 GB)."}, 413
+    if not algorithms:
+        return {"error": "No valid hash algorithm selected"}, 400
+    if not db_user_id:
+        return {"error": "User mapping not found"}, 500
+
+    _cleanup_old_partials()
+    total = (size + CHUNK_SIZE - 1) // CHUNK_SIZE
+
+    # same file picked again after a refresh -> continue the old upload
+    if key:
+        for existing in os.listdir(PARTIAL_FOLDER):
+            meta = _load_partial(existing)
+            if meta and meta.get("key") == key and meta.get("size") == size:
+                meta["algorithms"] = algorithms
+                with open(os.path.join(_partial_dir(existing), "meta.json"), "w") as handle:
+                    json.dump(meta, handle)
+                return {"upload_id": existing, "chunk_size": CHUNK_SIZE,
+                        "total_chunks": total,
+                        "received": _received_chunks(existing, total)}
+
+    upload_id = uuid.uuid4().hex
+    os.makedirs(_partial_dir(upload_id), exist_ok=True)
+    with open(os.path.join(_partial_dir(upload_id), "meta.json"), "w") as handle:
+        json.dump({"user": db_user_id, "name": name, "size": size,
+                   "key": key, "algorithms": algorithms}, handle)
+    return {"upload_id": upload_id, "chunk_size": CHUNK_SIZE,
+            "total_chunks": total, "received": []}
+
+
+@app.route("/api/user/upload/<upload_id>", methods=["GET", "DELETE"])
+@user_required
+def api_upload_status(upload_id):
+    meta = _load_partial(upload_id)
+    if not meta:
+        return {"error": "Upload not found"}, 404
+    if request.method == "DELETE":
+        shutil.rmtree(_partial_dir(upload_id), ignore_errors=True)
+        return {"cancelled": True}
+    total = (meta["size"] + CHUNK_SIZE - 1) // CHUNK_SIZE
+    return {"upload_id": upload_id, "size": meta["size"], "total_chunks": total,
+            "chunk_size": CHUNK_SIZE,
+            "received": _received_chunks(upload_id, total)}
+
+
+@app.route("/api/user/upload/<upload_id>/chunk/<int:index>", methods=["POST"])
+@user_required
+def api_upload_chunk(upload_id, index):
+    meta = _load_partial(upload_id)
+    if not meta:
+        return {"error": "Upload not found"}, 404
+    total = (meta["size"] + CHUNK_SIZE - 1) // CHUNK_SIZE
+    if not 0 <= index < total:
+        return {"error": "Bad chunk number"}, 400
+
+    data = request.get_data()
+    expected = CHUNK_SIZE if index < total - 1 else meta["size"] - CHUNK_SIZE * (total - 1)
+    if len(data) != expected:
+        return {"error": f"Chunk {index} has the wrong size"}, 400
+
+    folder = _partial_dir(upload_id)
+    temp = os.path.join(folder, f"{index}.tmp")
+    with open(temp, "wb") as handle:
+        handle.write(data)
+    os.replace(temp, os.path.join(folder, f"{index}.part"))
+    return {"received": len(_received_chunks(upload_id, total)), "total": total}
+
+
+@app.route("/api/user/upload/<upload_id>/complete", methods=["POST"])
+@user_required
+def api_upload_complete(upload_id):
+    meta = _load_partial(upload_id)
+    if not meta:
+        return {"error": "Upload not found"}, 404
+    total = (meta["size"] + CHUNK_SIZE - 1) // CHUNK_SIZE
+    missing = [i for i in range(total) if i not in _received_chunks(upload_id, total)]
+    if missing:
+        return {"error": "Some parts are missing", "missing": missing[:50]}, 409
+
+    safe_name = meta["name"]
+    stored_name = f"{uuid.uuid4().hex}_{safe_name}"
+    disk_path = os.path.join(UPLOAD_FOLDER, stored_name)
+    folder = _partial_dir(upload_id)
+    with open(disk_path, "wb") as target:
+        for i in range(total):
+            with open(os.path.join(folder, f"{i}.part"), "rb") as part:
+                shutil.copyfileobj(part, target, 1024 * 1024)
+    shutil.rmtree(folder, ignore_errors=True)
+
+    return finalize_upload(disk_path, stored_name, safe_name,
+                           meta["algorithms"], session.get("db_user_id"))
 
 
 @app.route("/api/user/verify", methods=["POST"])
@@ -722,7 +950,8 @@ def api_user_verify():
 
     cursor = dict_cursor()
     cursor.execute(
-        """SELECT id, user_id, file_name, original_hash, hash_algorithm
+        """SELECT id, user_id, file_name, file_path, original_hash,
+                  hash_algorithm
            FROM files WHERE id=%s AND user_id=%s""",
         (file_id, session.get("db_user_id")))
     file_row = cursor.fetchone()
@@ -737,6 +966,19 @@ def api_user_verify():
 
     data = upload.read()
     result = compare_hashes(expected, lambda a: safe_hash(hash_bytes, data, a))
+
+    # how much of the file changed? compare with the stored baseline copy
+    modified_percent = None
+    stored_path = resolve_path(file_row.get("file_path"))
+    if stored_path and os.path.isfile(stored_path):
+        with open(stored_path, "rb") as handle:
+            modified_percent = compare_tools.byte_diff_percent(handle.read(), data)
+    elif result["status"] == "safe":
+        modified_percent = 0.0
+    if modified_percent is not None:
+        result["suffix"] = f" \u00b7 {modified_percent}% bytes changed"
+        result["remarks"] += result["suffix"]
+
     record_check(file_row, result, "manual")
     log_activity(f"Verified {file_row['file_name']} -> {result['status']}",
                  "VERIFY")
@@ -747,7 +989,213 @@ def api_user_verify():
                   else result["status"].capitalize(),
         "status": result["status"], "matched": result["matched"],
         "total": result["total"], "rows": result["rows"],
+        "modified_percent": modified_percent,
+        "safe_percent": None if modified_percent is None
+                        else round(100 - modified_percent, 4),
     }
+
+
+# =========================================================
+# COMPARE TOOLS  (image / PDF)      used by user AND admin console
+# =========================================================
+
+def any_login_required(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if "user_id" not in session and "admin_id" not in session:
+            return {"error": "Unauthorized"}, 401
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def two_uploads():
+    first, second = request.files.get("file_a"), request.files.get("file_b")
+    if not first or not second:
+        return None, None, ({"error": "Choose both files."}, 400)
+    return first.read(), second.read(), None
+
+
+@app.route("/api/compare/image", methods=["POST"])
+@any_login_required
+def api_compare_image():
+    data_a, data_b, error = two_uploads()
+    if error:
+        return error
+    try:
+        result = compare_tools.image_diff(data_a, data_b)
+    except Exception as exc:
+        app.logger.warning("image compare failed: %s", exc)
+        return {"error": "Could not read one of the images. "
+                         "Use PNG, JPG, WEBP, BMP or GIF files."}, 400
+    log_activity("Compared two images - "
+                 f"{result['percent_different']}% different", "COMPARE")
+    return result
+
+
+@app.route("/api/compare/pdf", methods=["POST"])
+@any_login_required
+def api_compare_pdf():
+    data_a, data_b, error = two_uploads()
+    if error:
+        return error
+    try:
+        result = compare_tools.pdf_diff(data_a, data_b)
+    except Exception as exc:
+        app.logger.warning("pdf compare failed: %s", exc)
+        return {"error": "Could not read one of the PDFs "
+                         "(is it password protected or damaged?)."}, 400
+    log_activity("Compared two PDFs - "
+                 f"{result['percent_different']}% different", "COMPARE")
+    return result
+
+
+# =========================================================
+# MONITOR: TAMPER & RESTORE        (user = own files, admin = any file)
+# =========================================================
+
+def tamper_stored_file(file_row):
+    """Flip one byte of the stored file (a copy of the original is kept
+    next to it as <file>.orig so Restore can undo the change)."""
+    path = resolve_path(file_row["file_path"])
+    if not os.path.isfile(path):
+        return "File not found on disk."
+    backup = path + ".orig"
+    if not os.path.exists(backup):
+        shutil.copy2(path, backup)
+    size = os.path.getsize(path)
+    with open(path, "r+b") as handle:
+        if size:
+            handle.seek(size // 2)
+            byte = handle.read(1)
+            handle.seek(size // 2)
+            handle.write(bytes([byte[0] ^ 0x01]))
+        else:
+            handle.write(b"\x00")
+    return None
+
+
+def restore_stored_file(file_row):
+    path = resolve_path(file_row["file_path"])
+    backup = path + ".orig"
+    if not os.path.isfile(backup):
+        return "No original copy found - this file was not tampered here."
+    shutil.copy2(backup, path)
+    remove_quietly(backup)
+    return None
+
+
+def recheck_stored_file(cursor, file_row):
+    """Re-hash the file on disk, record the check, return a JSON-able dict."""
+    path = resolve_path(file_row["file_path"])
+    expected = expected_hashes(cursor, file_row)
+    if not expected:
+        return {"status": "safe", "matched": 0, "total": 0, "rows": []}
+    result = compare_hashes(expected, lambda a: safe_hash(hash_file, path, a))
+    backup = path + ".orig"
+    if os.path.isfile(backup) and os.path.isfile(path):
+        with open(backup, "rb") as b_handle, open(path, "rb") as p_handle:
+            pct = compare_tools.byte_diff_percent(b_handle.read(),
+                                                  p_handle.read())
+        result["remarks"] += f" \u00b7 {pct}% bytes changed"
+    record_check(file_row, result, "admin_scan")
+    return {"status": result["status"], "matched": result["matched"],
+            "total": result["total"], "remarks": result["remarks"],
+            "rows": result["rows"]}
+
+
+def monitor_action(action, file_id, owner_id=None):
+    cursor = dict_cursor()
+    sql = """SELECT id, user_id, file_name, file_path, original_hash,
+                    hash_algorithm FROM files WHERE id=%s"""
+    params = [file_id]
+    if owner_id is not None:
+        sql += " AND user_id=%s"
+        params.append(owner_id)
+    cursor.execute(sql, params)
+    file_row = cursor.fetchone()
+    if not file_row:
+        cursor.close()
+        return {"error": "File not found"}, 404
+
+    problem = (tamper_stored_file if action == "tamper"
+               else restore_stored_file)(file_row)
+    if problem:
+        cursor.close()
+        return {"error": problem}, 409
+
+    outcome = recheck_stored_file(cursor, file_row)
+    cursor.close()
+    log_activity(f"{'Tampered' if action == 'tamper' else 'Restored'} "
+                 f"{file_row['file_name']} -> {outcome['status']}",
+                 "TAMPER" if action == "tamper" else "RESTORE")
+    return {"file_id": file_id, "file": file_row["file_name"], **outcome}
+
+
+@app.route("/api/user/monitor/<int:file_id>/<action>", methods=["POST"])
+@user_required
+def api_user_monitor(file_id, action):
+    if action not in ("tamper", "restore"):
+        return {"error": "Unknown action"}, 404
+    return monitor_action(action, file_id, session.get("db_user_id"))
+
+
+@app.route("/api/admin/files/<int:file_id>/<action>", methods=["POST"])
+@admin_required
+def api_admin_monitor(file_id, action):
+    if action not in ("tamper", "restore"):
+        return {"error": "Unknown action"}, 404
+    return monitor_action(action, file_id)
+
+
+# =========================================================
+# AI ASSISTANT  (see ai_assistant.py)
+# =========================================================
+
+def ai_user_context():
+    return ai_assistant.summarize_user(api_user_files(), api_user_history())
+
+
+def ai_admin_context():
+    cursor = dict_cursor()
+    cursor.execute("SELECT status, COUNT(*) AS n FROM files GROUP BY status")
+    statuses = {row["status"]: row["n"] for row in cursor.fetchall()}
+    cursor.execute("SELECT COUNT(*) AS n FROM users1 WHERE role='user'")
+    users = cursor.fetchone()["n"]
+    cursor.close()
+    return {"scope": "admin (system-wide, no personal data)", "total_users": users,
+            "files_by_status": statuses, "total_files": sum(statuses.values())}
+
+
+_faq_cache = {"rows": [], "at": 0}
+
+
+def ai_faq_loader():
+    """cyber_faq rows, 5 minute cache taaki har message par DB query na ho."""
+    if _faq_cache["rows"] and time.time() - _faq_cache["at"] < 300:
+        return _faq_cache["rows"]
+    cursor = dict_cursor()
+    cursor.execute("SELECT category, question, answer FROM cyber_faq ORDER BY id")
+    rows = list(cursor.fetchall())
+    cursor.close()
+    _faq_cache.update(rows=rows, at=time.time())
+    return rows
+
+
+def ai_chat_saver(message, answer, mode):
+    """User ki chat ai_chat_history me save karta hai (mode: 'AI' ya 'Basic')."""
+    user_id = session.get("db_user_id")
+    if not user_id:
+        return
+    cursor = conn().cursor()
+    cursor.execute(
+        "INSERT INTO ai_chat_history (user_id, message, response, response_mode) "
+        "VALUES (%s, %s, %s, %s)",
+        (user_id, message[:800], answer[:8000], mode))
+    conn().commit()
+    cursor.close()
+
+
+ai_assistant.init(app, ai_user_context, ai_admin_context, ai_faq_loader, ai_chat_saver)
 
 
 # =========================================================
@@ -1405,7 +1853,7 @@ if __name__ == "__main__":
     # 127.0.0.1 = only this PC. Set FIC_HOST=0.0.0.0 to reach it from your
     # phone/LAN, but then turn the debugger off (FIC_DEBUG=0).
     app.run(
-        debug=os.environ.get("FIC_DEBUG", "1") == "1",
+        debug=os.environ.get("FIC_DEBUG", "0") == "1",
         host=os.environ.get("FIC_HOST", "127.0.0.1"),
         port=int(os.environ.get("FIC_PORT", "5000")),
     )

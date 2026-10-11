@@ -94,52 +94,6 @@ function table(headers, rows, emptyMessage = "No data available.") {
 }
 
 /* =========================
-   HASH FUNCTIONS
-========================= */
-
-const bytesToHex = (buffer) =>
-    [...new Uint8Array(buffer)]
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join("");
-
-async function calculateHash(buffer, algorithm) {
-    try {
-        if (["SHA-1", "SHA-256", "SHA-384", "SHA-512"].includes(algorithm)) {
-            return bytesToHex(await crypto.subtle.digest(algorithm, buffer));
-        }
-
-        const custom = {
-            "SHA-224": () => sha256.sha224(buffer),
-            "SHA-512/224": () => sha512.sha512_224(buffer),
-            "SHA-512/256": () => sha512.sha512_256(buffer),
-            "SHA3-224": () => sha3_224(buffer),
-            "SHA3-256": () => sha3_256(buffer),
-            "SHA3-384": () => sha3_384(buffer),
-            "SHA3-512": () => sha3_512(buffer)
-        };
-
-        return custom[algorithm] ? custom[algorithm]() : null;
-    } catch (error) {
-        console.error(error);
-        return null;
-    }
-}
-
-async function calculateAllHashes(buffer, algorithms) {
-    const result = {};
-
-    for (const algorithm of algorithms) {
-        const hash = await calculateHash(buffer, algorithm);
-
-        if (hash) {
-            result[algorithm] = hash;
-        }
-    }
-
-    return result;
-}
-
-/* =========================
    UI HELPERS
 ========================= */
 
@@ -148,24 +102,6 @@ function pageTitle(title, description) {
         <div class="page-title">
             <h2>${title}</h2>
             <p>${description}</p>
-        </div>
-    `;
-}
-
-function fileDrop(inputId, label, multiple = false) {
-    return `
-        <div class="drop-zone" data-drop-zone>
-            <div style="font-size:30px;">☁</div>
-            <b class="drop-label">${label}</b>
-            <br>
-            <small>Processed locally in your browser — nothing is uploaded</small>
-
-            <input
-                type="file"
-                id="${inputId}"
-                ${multiple ? "multiple" : ""}
-                hidden
-            >
         </div>
     `;
 }
@@ -390,9 +326,9 @@ const Views = {
         const tiles = [
             ["upload", "Upload File", "☁", "Register & hash a file"],
             ["verify", "Verify File", "✓", "Compare with baseline"],
-            ["tool", "Hash Tool", "🔐", "Hash text or any file"],
-            ["cmp", "Compare Files", "⚖", "Check two files match"],
-            ["mon", "Monitor", "📡", "Detect tampering live"],
+            ["tool", "Hash Tool", "🔐", "Step-by-step SHA hashing"],
+            ["cmp", "Compare Files", "⚖", "Image, PDF & hash compare"],
+            ["mon", "Monitor", "📡", "Tamper & restore a file"],
             ["hist", "History", "🕘", "Past verifications"],
             ["rep", "Reports", "📊", "Summary & CSV"],
             ["prof", "Profile", "👤", "Account details"]
@@ -557,14 +493,14 @@ const Views = {
         return `
             ${pageTitle(
                 "Upload File",
-                "Select files and the SHA algorithms to generate."
+                "Select files (PDF, image, video or any other type) and the SHA algorithms to generate."
             )}
 
             <div class="card card-body no-margin">
-                ${fileDrop("uploadFiles", "Click or drag files here", true)}
+                ${FIC.drop("uploadFiles", { multiple: true, hint: "PDF, image, video or any file" })}
 
                 <p style="font-weight:700;margin:20px 0 0;">
-                    Hash algorithms 
+                    Hash algorithms
                 </p>
 
                 ${algorithmPicker(["SHA-256", "SHA-512", "SHA3-256"])}
@@ -574,9 +510,7 @@ const Views = {
                 </button>
             </div>
 
-            <div id="uploadResult">
-                ${state.uploadResult}
-            </div>
+            <div id="uploadJobs" class="up-wrap"></div>
         `;
     },
 
@@ -599,7 +533,7 @@ const Views = {
                                 `).join("")}
                             </select>
 
-                            ${fileDrop("verifyInput", "Choose the current copy to compare")}
+                            ${FIC.drop("verifyInput", { hint: "Choose the current copy of the file" })}
 
                             <button class="btn" id="verifyBtn">
                                 Verify Integrity
@@ -613,6 +547,8 @@ const Views = {
                 }
             </div>
 
+            ${FIC.progress("verifyProg")}
+
             ${state.result}
         `;
     },
@@ -621,28 +557,10 @@ const Views = {
         return `
             ${pageTitle(
                 "Hash Tool",
-                "Instantly hash any text or file with every SHA algorithm."
+                "Hash text, PDF, image, video or any file. Pick one algorithm for its step-by-step working, or select all."
             )}
 
-            <div class="card card-body no-margin">
-                <textarea
-                    id="hashText"
-                    placeholder="Type or paste text..."
-                ></textarea>
-
-                <div class="row">
-                    <b style="color:var(--muted);">or</b>
-                    ${fileDrop("hashFile", "Choose a file")}
-                </div>
-
-                <div class="row" style="margin-top:14px;">
-                    <button class="btn" id="hashToolBtn">
-                        Generate hashes
-                    </button>
-                </div>
-            </div>
-
-            <div id="hashToolResult"></div>
+            ${FIC.hashToolHTML()}
         `;
     },
 
@@ -650,118 +568,27 @@ const Views = {
         return `
             ${pageTitle(
                 "Compare Files",
-                "Check whether two files are byte-identical across all algorithms."
+                "Compare two images or two PDFs and see how much is different, or match two files by hash."
             )}
 
-            <div class="grid grid-2">
-                <div class="card card-body no-margin">
-                    ${fileDrop("compareFileA", "File A")}
-                </div>
-
-                <div class="card card-body no-margin">
-                    ${fileDrop("compareFileB", "File B")}
-                </div>
-            </div>
-
-            <div class="row" style="margin-top:18px;">
-                <button class="btn" id="compareBtn">
-                    Compare
-                </button>
-            </div>
-
-            <div id="compareResult"></div>
+            ${FIC.compareHTML()}
         `;
     },
 
     mon() {
         return `
             ${pageTitle(
-                "Real-time Monitor",
-                "Rescans stored files and detects content changes."
+                "Monitor",
+                "Tamper a file to see the change get detected, then restore it."
             )}
 
-            <div class="card card-body no-margin">
-                <div class="row">
-                    <button class="btn btn-green" id="scanBtn">
-                        Scan now
-                    </button>
-
-                    <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
-                        <input type="checkbox" id="autoScan">
-                        Auto-scan every 5s
-                    </label>
-
-                    <span id="scanInfo" style="color:var(--muted);"></span>
-                </div>
-            </div>
-
-            <div class="card">
-                ${table(
-                    ["File", "Primary hash", "Status", "Last checked", "Demo"],
-                    state.files.map((file) => {
-                        const algorithm = Object.keys(file.hashes)[0];
-
-                        return `
-                            <tr>
-                                <td><b>${escapeHTML(file.name)}</b></td>
-
-                                <td>
-                                    <span class="algorithm">${algorithm}</span>
-                                    <span class="hash">${file.hashes[algorithm].slice(0, 18)}...</span>
-                                </td>
-
-                                <td>${statusPill(file.status)}</td>
-
-                                <td>${file.checked ? formatDate(file.checked) : "—"}</td>
-
-                                <td>
-                                    <div class="row">
-                                        <button
-                                            class="btn btn-red btn-small"
-                                            data-tamper="${file.id}"
-                                        >
-                                            Tamper
-                                        </button>
-
-                                        <button
-                                            class="btn btn-light btn-small"
-                                            data-restore="${file.id}"
-                                        >
-                                            Restore
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                        `;
-                    }),
-                    "Upload files to monitor them."
-                )}
-            </div>
-
-            <div class="card">
-                <div class="card-header">Alerts</div>
-
-                <div class="activity">
-                    ${
-                        state.activity.filter((item) => item.alert).length
-                            ? state.activity
-                                .filter((item) => item.alert)
-                                .reverse()
-                                .map((item) => `
-                                    <div>
-                                        <small>${formatTime(item.time)}</small>
-                                        🚨 ${escapeHTML(item.message)}
-                                    </div>
-                                `)
-                                .join("")
-                            : `
-                                <div class="empty" style="display:block;">
-                                    No alerts. Press "Tamper" on a file, then scan.
-                                </div>
-                            `
-                    }
-                </div>
-            </div>
+            ${FIC.monitorHTML(state.files.map((file) => ({
+                id: file.id,
+                name: file.name,
+                size: file.size,
+                status: file.status,
+                lastChecked: file.checked
+            })), { empty: "Upload files to monitor them." })}
         `;
     },
 
@@ -802,6 +629,11 @@ const Views = {
                 "Integrity summary for your files."
             )}
 
+            <div class="report-actions top">
+                <a class="btn" href="/api/user/report.pdf" download>⬇ Download PDF</a>
+                <a class="btn btn-light" href="/api/user/report.csv" download>⬇ Download CSV</a>
+            </div>
+
             <div class="grid grid-4">
                 <div class="stat stat-blue">
                     <b>${state.files.length}</b>
@@ -819,24 +651,38 @@ const Views = {
                 </div>
 
                 <div class="stat stat-red">
-                    <b>${state.history.length}</b>
+                    <b>${checkGroups().length}</b>
                     <span>Verifications</span>
                 </div>
             </div>
 
-            <div class="card">
+            ${FIC.reportCharts({
+                kpis: false,
+                heat: false,
+                files: state.files.map((file) => ({
+                    name: file.name,
+                    size: file.size,
+                    status: file.status,
+                    algorithms: Object.keys(file.hashes)
+                })),
+                checks: checkGroups()
+            })}
+
+            <div class="card" style="margin-top:20px;">
                 <div class="card-header">
                     Integrity report
 
-                    <button class="btn" id="copyCSV">
-                        Copy as CSV
-                    </button>
+                    <span class="report-actions">
+                        <a class="btn" href="/api/user/report.pdf" download>⬇ Download PDF</a>
+                        <a class="btn btn-light" href="/api/user/report.csv" download>⬇ Download CSV</a>
+                    </span>
                 </div>
 
                 ${table(
                     ["ID", "File", "Size", "Algorithm", "Baseline hash", "Status"],
                     state.files.map((file) => {
-                        const algorithm = Object.keys(file.hashes)[0];
+                        const algorithm = Object.keys(file.hashes)[0] || "—";
+                        const baseline = file.hashes[algorithm] || "";
 
                         return `
                             <tr>
@@ -844,7 +690,7 @@ const Views = {
                                 <td><b>${escapeHTML(file.name)}</b></td>
                                 <td>${formatSize(file.size)}</td>
                                 <td><span class="algorithm">${algorithm}</span></td>
-                                <td><span class="hash">${file.hashes[algorithm].slice(0, 28)}...</span></td>
+                                <td><span class="hash">${baseline.slice(0, 28)}${baseline ? "..." : ""}</span></td>
                                 <td>${statusPill(file.status)}</td>
                             </tr>
                         `;
@@ -931,49 +777,31 @@ const Views = {
    FILE HELPERS
 ========================= */
 
-function selectedFile(inputId) {
-    const input = $(inputId);
-    return input && input.files.length ? input.files[0] : null;
-}
-
 function selectedAlgorithms() {
     return [...document.querySelectorAll('input[name="algorithm"]:checked')]
         .map((input) => input.value);
 }
 
-/* =========================
-   MONITOR SCAN
-========================= */
+/* One verification writes one history row per algorithm - group them back into one check. */
+function checkGroups() {
+    const groups = {};
 
-async function scanFiles() {
-    let newAlerts = 0;
+    state.history.forEach((item) => {
+        const key = `${item.fileId}|${item.time.getTime()}`;
+        const group = groups[key] || (groups[key] = {
+            time: item.time,
+            status: "safe",
+            percent: null,
+            file: item.file
+        });
 
-    for (const file of state.files) {
-        const primaryAlgorithm = Object.keys(file.hashes)[0];
-        const currentHash = await calculateHash(file.buffer, primaryAlgorithm);
+        if (item.result !== "safe") group.status = item.result;
 
-        file.checked = new Date();
+        const percent = FIC.percentFromRemarks(item.remarks);
+        if (percent !== null) group.percent = percent;
+    });
 
-        if (currentHash !== file.hashes[primaryAlgorithm]) {
-            if (file.status !== "modified") {
-                file.status = "modified";
-                newAlerts++;
-
-                logActivity(
-                    `${file.name} was modified (${primaryAlgorithm} mismatch)`,
-                    true
-                );
-            }
-        } else {
-            file.status = "safe";
-        }
-    }
-
-    logActivity(
-        `Scan complete: ${state.files.length} checked, ${newAlerts} new alerts`
-    );
-
-    return newAlerts;
+    return Object.values(groups).sort((a, b) => a.time - b.time);
 }
 
 /* =========================
@@ -1028,7 +856,7 @@ function bindEvents() {
         };
     });
 
-    bindDropZones();
+    FIC.bindDrops(document);
 
     if ($("closeWelcome")) {
         $("closeWelcome").onclick = () => {
@@ -1041,9 +869,9 @@ function bindEvents() {
 
     bindVerify();
 
-    bindHashTool();
+    FIC.bindHashTool({ onDone: (message) => logActivity(message) });
 
-    bindCompare();
+    FIC.bindCompare({ onDone: (message) => logActivity(message) });
 
     bindMonitor();
 
@@ -1051,83 +879,44 @@ function bindEvents() {
 }
 
 /* =========================
-   DROP ZONES
-========================= */
-
-function bindDropZones() {
-    document.querySelectorAll("[data-drop-zone]").forEach((zone) => {
-        const input = zone.querySelector("input");
-        const label = zone.querySelector(".drop-label");
-        const originalLabel = label.textContent;
-
-        zone.onclick = (event) => {
-            if (event.target !== input) {
-                input.click();
-            }
-        };
-
-        input.onchange = () => {
-            label.textContent =
-                [...input.files].map((file) => file.name).join(", ") ||
-                originalLabel;
-        };
-
-        zone.ondragover = (event) => {
-            event.preventDefault();
-            zone.classList.add("dragging");
-        };
-
-        zone.ondragleave = () => {
-            zone.classList.remove("dragging");
-        };
-
-        zone.ondrop = (event) => {
-            event.preventDefault();
-            zone.classList.remove("dragging");
-
-            input.files = event.dataTransfer.files;
-            input.dispatchEvent(new Event("change"));
-        };
-    });
-}
-
-/* =========================
    UPLOAD
 ========================= */
 
 function bindUpload() {
+    Uploader.paint($("uploadJobs"));
+
     if (!$("generateHashes")) return;
 
-    $("generateHashes").onclick = async () => {
+    $("generateHashes").onclick = () => {
         const files = [...$("uploadFiles").files];
         const algorithms = selectedAlgorithms();
 
         if (!files.length || !algorithms.length) {
-            $("uploadResult").innerHTML = `<div class="card card-body empty">Choose a file and at least one algorithm.</div>`;
+            alert("Choose a file and at least one algorithm.");
             return;
         }
 
-        let output = "";
-        for (const file of files) {
-            const form = new FormData();
-            form.append("file", file);
-            algorithms.forEach(a => form.append("algorithms", a));
+        Uploader.add(files, algorithms);
 
-            const response = await fetch("/api/user/upload", { method: "POST", body: form });
-            const data = await response.json();
-            if (!response.ok) {
-                output += `<div class="card card-body empty">${escapeHTML(data.error || "Upload failed")}</div>`;
-                continue;
-            }
-
-            output += `<div class="card"><div class="card-header">${escapeHTML(data.name)} · ${formatSize(data.size)} · ID #${data.id}</div>${table(["Algorithm","Hash",""], hashRows(data.hashes))}</div>`;
-        }
-
-        state.uploadResult = output;
-        await loadDatabaseData();
-        $("uploadResult").innerHTML = output;
+        // empty the drop box so the next file can be chosen while these upload
+        $("uploadFiles").value = "";
+        $("uploadFiles").dispatchEvent(new Event("change", { bubbles: true }));
     };
 }
+
+/* finished upload card (hashes + copy buttons) */
+Uploader.renderDone = (job) => {
+    const data = job.result;
+    return `<div class="card"><div class="card-header">${FIC.kind(data.name)} · ${formatSize(data.size)} · ID #${data.id}</div>${table(["Algorithm", "Hash", ""], hashRows(data.hashes))}</div>`;
+};
+
+Uploader.onChange = () => Uploader.paint($("uploadJobs"));
+
+Uploader.onDone = async (job) => {
+    logActivity(`Uploaded ${job.result.name}`);
+    await loadDatabaseData();
+    if (["dash", "rep", "mon"].includes(state.page)) render();
+};
 
 /* =========================
    VERIFY
@@ -1138,212 +927,61 @@ function bindVerify() {
 
     $("verifyBtn").onclick = async () => {
         const fileId = $("verifyFile").value;
-        const upload = selectedFile("verifyInput");
-        if (!fileId || !upload) { alert("Choose a stored file and a file to compare."); return; }
+        const upload = FIC.file("verifyInput");
+
+        if (!fileId || !upload) {
+            alert("Choose a stored file and a file to compare.");
+            return;
+        }
+
+        const button = $("verifyBtn");
+        button.disabled = true;
 
         const form = new FormData();
         form.append("file_id", fileId);
         form.append("file", upload);
-        const response = await fetch("/api/user/verify", { method: "POST", body: form });
-        const data = await response.json();
-        if (!response.ok) { alert(data.error || "Verification failed"); return; }
 
-        state.result = `<div class="verify-result ${data.result === "Original" ? "verify-safe" : "verify-tampered"}"><h3>File is ${escapeHTML(data.result)}</h3>${escapeHTML(data.file)} · ${data.matched}/${data.total} hashes matched</div><div class="card">${table(["Algorithm","Stored","Calculated","Result"], data.rows.map(row => `<tr><td><span class="algorithm">${escapeHTML(row.algorithm)}</span></td><td><span class="hash">${row.stored}</span></td><td><span class="hash">${row.calculated}</span></td><td>${statusPill(row.match ? "match" : "mismatch")}</td></tr>`))}</div>`;
+        FIC.setProgress("verifyProg", 0, "Uploading…");
+
+        const result = await FIC.post("/api/user/verify", form, (loaded, total) => {
+            FIC.setProgress(
+                "verifyProg",
+                loaded >= total ? null : Math.min(99, (100 * loaded) / total),
+                loaded >= total ? "Verifying…" : "Uploading…"
+            );
+        });
+
+        FIC.setProgress("verifyProg", false);
+        button.disabled = false;
+
+        if (!result.ok) {
+            alert(result.data.error || "Verification failed");
+            return;
+        }
+
+        state.result = FIC.verifyResultHTML(result.data);
+        logActivity(
+            `Verified ${result.data.file}: ${result.data.status}`,
+            result.data.status !== "safe"
+        );
+
         await loadDatabaseData();
         render();
     };
 }
 
 /* =========================
-   HASH TOOL
-========================= */
-
-function bindHashTool() {
-    if (!$("hashToolBtn")) return;
-
-    $("hashToolBtn").onclick = async () => {
-        const file = selectedFile("hashFile");
-
-        const buffer = file
-            ? await file.arrayBuffer()
-            : new TextEncoder().encode($("hashText").value);
-
-        if (!buffer.byteLength) {
-            $("hashToolResult").innerHTML = `
-                <div class="card card-body empty">
-                    Enter text or choose a file.
-                </div>
-            `;
-            return;
-        }
-
-        const hashes = await calculateAllHashes(buffer, ALGORITHMS);
-
-        logActivity(
-            `Hashed ${file ? file.name : "text input"} with Hash Tool`
-        );
-
-        $("hashToolResult").innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    ${file ? escapeHTML(file.name) : "Text input"}
-                    · ${formatSize(buffer.byteLength)}
-                </div>
-
-                ${table(
-                    ["Algorithm", "Hash", ""],
-                    hashRows(hashes)
-                )}
-            </div>
-        `;
-
-        bindCopyButtons();
-    };
-}
-
-/* =========================
-   COMPARE
-========================= */
-
-function bindCompare() {
-    if (!$("compareBtn")) return;
-
-    $("compareBtn").onclick = async () => {
-        const fileA = selectedFile("compareFileA");
-        const fileB = selectedFile("compareFileB");
-
-        if (!fileA || !fileB) {
-            alert("Choose both files.");
-            return;
-        }
-
-        const hashesA = await calculateAllHashes(
-            await fileA.arrayBuffer(),
-            ALGORITHMS
-        );
-
-        const hashesB = await calculateAllHashes(
-            await fileB.arrayBuffer(),
-            ALGORITHMS
-        );
-
-        const algorithms = Object.keys(hashesA);
-        let matched = 0;
-
-        const rows = algorithms.map((algorithm) => {
-            const match = hashesA[algorithm] === hashesB[algorithm];
-
-            if (match) matched++;
-
-            return `
-                <tr>
-                    <td><span class="algorithm">${algorithm}</span></td>
-                    <td><span class="hash">${hashesA[algorithm].slice(0, 20)}...</span></td>
-                    <td><span class="hash">${hashesB[algorithm].slice(0, 20)}...</span></td>
-                    <td>${statusPill(match ? "same" : "diff")}</td>
-                </tr>
-            `;
-        });
-
-        logActivity(
-            `Compared ${fileA.name} with ${fileB.name}`
-        );
-
-        const identical = matched === algorithms.length;
-
-        $("compareResult").innerHTML = `
-            <div class="verify-result ${
-                identical ? "verify-safe" : "verify-tampered"
-            }">
-                <h3>
-                    ${identical ? "Files are identical" : "Files differ"}
-                </h3>
-
-                ${escapeHTML(fileA.name)}
-                vs
-                ${escapeHTML(fileB.name)}
-                · ${matched}/${algorithms.length} hashes equal
-            </div>
-
-            <div class="card">
-                ${table(
-                    ["Algorithm", "File A", "File B", "Result"],
-                    rows
-                )}
-            </div>
-        `;
-
-        bindCopyButtons();
-    };
-}
-
-/* =========================
-   MONITOR
+   MONITOR  (Tamper & Restore)
 ========================= */
 
 function bindMonitor() {
-    if ($("scanBtn")) {
-        $("scanBtn").onclick = async () => {
-            await scanFiles();
+    FIC.bindMonitor(
+        (action, id) => `/api/user/monitor/${id}/${action}`,
+        async () => {
+            await loadDatabaseData();
             render();
-        };
-    }
-
-    if ($("autoScan")) {
-        $("autoScan").onchange = (event) => {
-            clearInterval(state.timer);
-
-            if (event.target.checked) {
-                state.timer = setInterval(async () => {
-                    await scanFiles();
-
-                    if (state.page === "mon") {
-                        render();
-                    }
-                }, 5000);
-            }
-        };
-    }
-
-    document.querySelectorAll("[data-tamper]").forEach((button) => {
-        button.onclick = () => {
-            const file = state.files.find(
-                (item) => item.id == button.dataset.tamper
-            );
-
-            if (!file) return;
-
-            const bytes = new Uint8Array(file.buffer.slice(0));
-            bytes[0] ^= 1;
-
-            file.buffer = bytes.buffer;
-
-            logActivity(
-                `Simulated tampering on ${file.name}`
-            );
-
-            render();
-        };
-    });
-
-    document.querySelectorAll("[data-restore]").forEach((button) => {
-        button.onclick = () => {
-            const file = state.files.find(
-                (item) => item.id == button.dataset.restore
-            );
-
-            if (!file) return;
-
-            file.buffer = file.original.slice(0);
-            file.status = "safe";
-
-            logActivity(
-                `Restored ${file.name}`
-            );
-
-            render();
-        };
-    });
+        }
+    );
 }
 
 /* =========================
@@ -1384,12 +1022,72 @@ function bindCopyButtons() {
     });
 }
 
-async function loadDatabaseData() {
+/* =========================
+   LOAD SCREEN  (shows how much has loaded)
+========================= */
+
+const LoadScreen = {
+    steps: ["Your profile", "Your files", "Verification history", "Building dashboard"],
+    done: 0, shown: 0, finished: false,
+
+    init() {
+        this.box = document.getElementById("loadScreen");
+        if (!this.box) return;
+        this.box.querySelector(".fic-load-list").innerHTML = this.steps
+            .map((name, i) => `<li data-i="${i}"><span class="tick"></span>${name}</li>`).join("");
+        this.tick();
+    },
+
+    step(index) {
+        if (!this.box) return;
+        this.done = Math.max(this.done, index + 1);
+        const item = this.box.querySelector(`li[data-i="${index}"]`);
+        if (item) item.classList.add("ok");
+    },
+
+    tick() {
+        if (!this.box || this.finished) return;
+        const target = (100 * this.done) / this.steps.length;
+        this.shown += (target - this.shown) * 0.4 + 1;
+        if (this.shown > target) this.shown = target;
+        this.box.querySelector(".fic-load-pct").textContent = Math.round(this.shown) + "%";
+        this.box.querySelector(".fic-load-bar i").style.width = this.shown + "%";
+        this.box.querySelector(".fic-load-text").textContent =
+            this.done >= this.steps.length ? "Ready" : "Loading " + this.steps[this.done].toLowerCase() + "…";
+        if (this.shown >= 100) { this.finish(); return; }
+        requestAnimationFrame(() => this.tick());
+    },
+
+    finish() {
+        if (!this.box || this.finished) return;
+        if (this.done < this.steps.length) {
+            this.done = this.steps.length;
+            this.steps.forEach((_, i) => this.step(i));
+            return;
+        }
+        this.finished = true;
+        this.box.querySelector(".fic-load-pct").textContent = "100%";
+        this.box.querySelector(".fic-load-bar i").style.width = "100%";
+        setTimeout(() => {
+            this.box.classList.add("hide");
+            setTimeout(() => this.box.remove(), 300);
+        }, 100);
+    }
+};
+
+LoadScreen.init();
+
+async function loadDatabaseData(first) {
     try {
+        const track = (index, request) => request.then((response) => {
+            if (first) LoadScreen.step(index);
+            return response;
+        });
+
         const [userRes, filesRes, historyRes] = await Promise.all([
-            fetch("/api/user/me"),
-            fetch("/api/user/files"),
-            fetch("/api/user/history")
+            track(0, fetch("/api/user/me")),
+            track(1, fetch("/api/user/files")),
+            track(2, fetch("/api/user/history"))
         ]);
         if (!userRes.ok) return;
         currentUser = await userRes.json();
@@ -1397,10 +1095,14 @@ async function loadDatabaseData() {
         const history = historyRes.ok ? await historyRes.json() : [];
         state.files = files.map(f => ({
             id: f.id, name: f.name, size: f.size || 0, hashes: f.hashes || {},
-            status: f.status || "safe", filepath: f.filepath, upload_date: f.upload_date
+            status: f.status || "safe", filepath: f.filepath, upload_date: f.upload_date,
+            type: f.type || "",
+            checked: f.last_checked ? new Date(f.last_checked) : null
         }));
         state.history = history.map((h, i) => ({
-            id: h.id || i + 1, file: h.filename || h.file || String(h.file_id || ""),
+            id: h.id || i + 1, fileId: h.file_id,
+            file: h.filename || h.file || String(h.file_id || ""),
+            remarks: h.remarks || "",
             algorithm: h.algorithm || "—", stored: h.stored_hash || h.stored || "",
             calculated: h.calculated_hash || h.calculated || "",
             result: h.result || h.status || "", time: new Date(h.verified_at || h.checked_at || h.created_at || Date.now())
@@ -1414,8 +1116,15 @@ async function loadDatabaseData() {
    NAVIGATION
 ========================= */
 
+const ROUTES = {
+    upload: "upload", verify: "verify", "hash-tool": "tool",
+    monitor: "mon", reports: "rep", compare: "cmp"
+};
+const ROUTE_OF = Object.fromEntries(Object.entries(ROUTES).map(([k, v]) => [v, k]));
+
 function goTo(page) {
     clearInterval(state.timer);
+    if (ROUTE_OF[page]) history.replaceState(null, "", "#" + ROUTE_OF[page]);
 
     state.page = page;
     state.result = "";
@@ -1452,19 +1161,12 @@ if ($("logoutBtn")) {
    INITIAL LOAD
 ========================= */
 
-loadDatabaseData().then(() => render());
-document.addEventListener("DOMContentLoaded", async () => {
-    try {
-        const res = await fetch("/api/user/me");
-        currentUser = res.ok ? await res.json() : { name: "User" };
-    } catch (error) {
-        console.error(error);
-        currentUser = { name: "User" };
-    }
-
-    document.querySelectorAll(".nav-link").forEach((link) => {
-        link.addEventListener("click", () => go(link.dataset.page));
-    });
-
+state.page = ROUTES[location.hash.slice(1)] || state.page;
+loadDatabaseData(true).then(() => {
     render();
+    LoadScreen.step(3);
+    Uploader.init(currentUser && currentUser.email);
+});
+document.addEventListener("DOMContentLoaded", () => {
+    if (!currentUser) currentUser = { name: "User" };
 });

@@ -1,0 +1,52 @@
+/* Cyber AI Assistant - floating chat */
+.aic { position: fixed; right: 18px; bottom: 18px; z-index: 9000; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.aic-fab {
+    width: 58px; height: 58px; border-radius: 50%; border: 0; cursor: pointer; font-size: 27px; color: #fff;
+    background: linear-gradient(135deg, #6366f1, #22d3ee); box-shadow: 0 12px 30px rgba(0, 0, 0, .45); transition: transform .15s;
+}
+.aic-fab:hover { transform: scale(1.07); }
+.aic-panel {
+    position: absolute; right: 0; bottom: 70px; width: min(380px, calc(100vw - 28px)); height: min(560px, calc(100vh - 110px));
+    display: flex; flex-direction: column; overflow: hidden; border-radius: 20px;
+    background: #0e1a36; color: #e6efff; border: 1px solid #1d2f5c; box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+    animation: aic-in .2s ease-out;
+}
+.aic-panel[hidden] { display: none; }
+@keyframes aic-in { from { transform: translateY(12px) scale(.97); opacity: 0; } }
+.aic-panel header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; color: #fff; background: linear-gradient(135deg, #4f46e5, #2563eb); }
+.aic-panel header > div:nth-child(2) { flex: 1; min-width: 0; line-height: 1.25; }
+.aic-panel header small { display: block; opacity: .85; font-size: 11.5px; }
+.aic-av { width: 36px; height: 36px; border-radius: 12px; background: rgba(255, 255, 255, .18); display: grid; place-items: center; font-size: 19px; }
+.aic-x { border: 0; background: rgba(255, 255, 255, .15); color: #fff; width: 30px; height: 30px; border-radius: 9px; cursor: pointer; }
+.aic-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; background: #0a1430; }
+.aic-m { max-width: 86%; padding: 9px 13px; border-radius: 16px; font-size: 13.5px; line-height: 1.5; word-wrap: break-word; animation: aic-up .2s; }
+@keyframes aic-up { from { transform: translateY(6px); opacity: 0; } }
+.aic-m.bot { align-self: flex-start; background: #0e1a36; border: 1px solid #1d2f5c; border-bottom-left-radius: 5px; }
+.aic-m.me { align-self: flex-end; color: #fff; background: linear-gradient(135deg, #3b82f6, #6366f1); border-bottom-right-radius: 5px; }
+.aic-m.err { border-color: #ef4444; color: #fecaca; }
+.aic-m p { margin: 0 0 6px; } .aic-m p:last-child { margin: 0; }
+.aic-m ul { margin: 4px 0 6px 18px; padding: 0; }
+.aic-m code { background: rgba(255, 255, 255, .12); padding: 1px 6px; border-radius: 6px; font-size: 12px; }
+.aic-dots i { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: #8ea2c9; animation: aic-b 1s infinite; }
+.aic-dots i:nth-child(2) { animation-delay: .15s; } .aic-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes aic-b { 50% { transform: translateY(-4px); opacity: .4; } }
+.aic-quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 12px; border-top: 1px solid #1d2f5c; background: #0e1a36; }
+.aic-quick button { border: 1px solid #1d2f5c; background: #12224a; color: #e6efff; border-radius: 99px; padding: 5px 11px; font-size: 12px; cursor: pointer; font-weight: 600; }
+.aic-quick button:hover { border-color: #22d3ee; }
+.aic-form { display: flex; gap: 8px; padding: 10px; background: #0e1a36; border-top: 1px solid #1d2f5c; }
+.aic-form input { flex: 1; min-width: 0; background: #12224a; border: 1px solid #1d2f5c; color: #e6efff; border-radius: 12px; padding: 10px 12px; font: inherit; }
+.aic-form input:focus { outline: 2px solid #3b82f6; }
+.aic-form button { border: 0; border-radius: 12px; padding: 0 16px; font-weight: 700; color: #fff; cursor: pointer; background: linear-gradient(135deg, #3b82f6, #22d3ee); }
+.aic-form button:disabled { opacity: .5; cursor: wait; }
+/* Browse questions panel */
+.aic-faq { max-height: 190px; overflow-y: auto; padding: 8px 12px; border-top: 1px solid #1d2f5c; background: #0e1a36; }
+.aic-faq[hidden] { display: none; }
+.aic-faq-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.aic-faq-list { display: flex; flex-direction: column; gap: 6px; }
+.aic-faq button { display: flex; justify-content: space-between; align-items: center; gap: 6px; text-align: left; border: 1px solid #1d2f5c; background: #12224a; color: #e6efff; border-radius: 10px; padding: 7px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.aic-faq button:hover { border-color: #22d3ee; }
+.aic-faq small { color: #8ea2c9; font-weight: 400; }
+.aic-faq .aic-faq-back { justify-content: flex-start; border: 0; background: transparent; padding: 0 0 6px; color: #8ea2c9; }
+.aic-faq-msg { font-size: 12.5px; color: #8ea2c9; padding: 4px 2px; }
+.aic-quick .aic-browse { border-color: #22d3ee; }
+@media (prefers-reduced-motion: reduce) { .aic-panel, .aic-m, .aic-dots i { animation: none; } }

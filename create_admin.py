@@ -20,12 +20,7 @@ def main():
     print("After hashing", flush=True)
 
     # Connect to MySQL using the same config your Flask app uses
-    conn = pymysql.connect(
-        host=config.MYSQL_HOST,
-        user=config.MYSQL_USER,
-        password=config.MYSQL_PASSWORD,
-        database=config.MYSQL_DB
-    )
+    conn = config.connect()
     print("After connect", flush=True)
     cursor = conn.cursor()
     print("DIAGNOSTIC: Connected to", config.MYSQL_HOST, config.MYSQL_DB, flush=True)

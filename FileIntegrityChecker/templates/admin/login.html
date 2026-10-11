@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Admin Login - File Integrity Checker</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+</head>
+
+<body>
+
+<div class="overlay"></div>
+
+<div class="container">
+
+<div class="heading">
+
+<h4>SECURE TODAY</h4>
+
+<h1>SAFE TOMORROW</h1>
+</div>
+
+<div class="login-card">
+
+<div class="shield">
+
+<svg width="45" height="45" fill="none" stroke="#1ea7ff" stroke-width="2" viewBox="0 0 24 24">
+
+<path d="M12 2L20 5V11C20 16 16.5 20 12 22C7.5 20 4 16 4 11V5L12 2Z"/>
+
+<path d="M9 12L11 14L15 10"/>
+
+</svg>
+
+</div>
+
+<h2>Admin Login</h2>
+
+{% if error %}
+
+<div class="error">
+
+{{ error }}
+
+</div>
+
+{% endif %}
+
+<form method="POST" action="{{ url_for('admin_login') }}">
+
+<div class="input-box">
+
+<label>Email</label>
+
+<input
+type="email"
+name="email"
+placeholder="Enter Email"
+required>
+
+</div>
+
+<div class="input-box">
+
+<label>Password</label>
+
+<input
+type="password"
+name="password"
+placeholder="Enter Password"
+required>
+
+</div>
+
+<button class="login-btn" type="submit">
+
+Login
+
+</button>
+
+<div class="or-text">OR</div>
+
+<a href="{{ url_for('user_login') }}" class="user-login-btn">
+    User Login
+</a>
+
+<div class="footer-text">
+
+<strong>
+    DESIGNED BY - <BR>
+    AMPICS GANPAT UNIVERSITY</BR>
+</strong>
+
+</div>
+
+</form>
+
+</div>
+
+<div class="bottom-menu">
+
+</div>
+
+</div>
+
+</body>
+
+</html>

@@ -55,10 +55,7 @@ HASH_COLUMNS = [("hash_records", "hash_value"), ("integrity_logs", "old_hash"),
 
 
 def main():
-    conn = pymysql.connect(host=config.MYSQL_HOST, user=config.MYSQL_USER,
-                           password=config.MYSQL_PASSWORD,
-                           database=config.MYSQL_DB,
-                           port=getattr(config, "MYSQL_PORT", 3306))
+    conn = config.connect()
     cur = conn.cursor()
     problems = warnings = 0
     print(f"Connected to {config.MYSQL_HOST}/{config.MYSQL_DB}\n")

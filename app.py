@@ -55,30 +55,6 @@ mysql = MySQL(app)
 
 
 
-def log_activity(user_id, username, activity, activity_type):
-    try:
-        cursor = mysql.connection.cursor()
-
-        ip_address = request.remote_addr
-
-        cursor.execute("""
-            INSERT INTO system_activity_log
-            (user_id, username, activity, activity_type, ip_address)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            user_id,
-            username,
-            activity,
-            activity_type,
-            ip_address
-        ))
-
-        mysql.connection.commit()
-        cursor.close()
-
-    except Exception as e:
-        print("Activity Log Error:", e)
-
 UPLOAD_FOLDER = os.path.join(app.root_path, "uploads")
 REPORT_FOLDER = os.path.join(app.root_path, "reports")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -177,6 +153,9 @@ def csv_safe(value):
 
 # ---------- logging tables (never allowed to break the main request) ------
 
+DB_WRITE_ERRORS = []
+
+
 def _safe_write(sql, params):
     cursor = None
     try:
@@ -189,7 +168,12 @@ def _safe_write(sql, params):
             conn().rollback()
         except Exception:
             pass
-        app.logger.warning("DB log write skipped: %s", exc)
+        # NOT silent any more: shows in the Render / terminal log and in
+        # /api/admin/db-health
+        msg = f"{sql.split()[2] if sql.split()[0].upper()=='INSERT' else sql.split()[1]}: {exc}"
+        DB_WRITE_ERRORS.append(f"{datetime.now():%H:%M:%S} {msg}")
+        del DB_WRITE_ERRORS[:-20]
+        print("[DB WRITE FAILED]", msg, flush=True)
         return None
     finally:
         if cursor is not None:
@@ -312,6 +296,120 @@ def record_check(file_row, result, verification_type):
                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (file_id, owner, name, event, severity, now,
              f"{result['change']} - {result['remarks']}"))
+
+
+# ---------- log tables: create / repair automatically ----------------------
+# Old databases had ENUM columns and foreign keys that rejected the values the
+# app writes (so verification_history / integrity_logs / monitoring stayed
+# empty). This runs once at start-up and fixes the tables in place.
+
+HASH_T = "VARCHAR(255) NULL"
+LOG_TABLES = {
+    "integrity_logs": {
+        "file_id": "INT NULL", "user_id": "INT NULL",
+        "old_hash": HASH_T, "new_hash": HASH_T,
+        "algorithm": "VARCHAR(30) NULL", "status": "VARCHAR(30) NULL",
+        "change_type": "VARCHAR(100) NULL", "remarks": "TEXT NULL",
+        "checked_at": "DATETIME NULL"},
+    "verification_history": {
+        "file_id": "INT NULL", "user_id": "INT NULL",
+        "result": "VARCHAR(30) NULL", "algorithm": "VARCHAR(30) NULL",
+        "old_hash": HASH_T, "current_hash": HASH_T,
+        "verification_type": "VARCHAR(30) NULL", "verified_at": "DATETIME NULL",
+        "remarks": "TEXT NULL"},
+    "monitoring": {
+        "file_id": "INT NULL", "user_id": "INT NULL",
+        "file_name": "VARCHAR(255) NULL", "event": "VARCHAR(30) NULL",
+        "alert": "VARCHAR(30) NULL", "detected_at": "DATETIME NULL",
+        "details": "TEXT NULL"},
+    "login_history": {
+        "user_id": "INT NULL", "email": "VARCHAR(255) NULL",
+        "role": "VARCHAR(30) NULL", "status": "VARCHAR(30) NULL",
+        "ip_address": "VARCHAR(64) NULL", "login_time": "DATETIME NULL",
+        "logout_time": "DATETIME NULL"},
+    "system_activity_log": {
+        "user_id": "INT NULL", "username": "VARCHAR(255) NULL",
+        "activity": "TEXT NULL", "activity_type": "VARCHAR(50) NULL",
+        "activity_time": "DATETIME NULL", "ip_address": "VARCHAR(64) NULL"},
+}
+
+
+def ensure_schema():
+    cur = conn().cursor()
+    done = []
+    try:
+        for table, cols in LOG_TABLES.items():
+            body = ", ".join(f"`{c}` {t}" for c, t in cols.items())
+            cur.execute(f"CREATE TABLE IF NOT EXISTS `{table}` "
+                        f"(`id` INT AUTO_INCREMENT PRIMARY KEY, {body})")
+
+        cur.execute(
+            """SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE,
+                      CHARACTER_MAXIMUM_LENGTH
+               FROM information_schema.COLUMNS
+               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ("""
+            + ",".join(["%s"] * len(LOG_TABLES)) + ")",
+            list(LOG_TABLES))
+        found = {}
+        for table, col, dtype, length in cur.fetchall():
+            found.setdefault(table, {})[col.lower()] = (dtype.lower(), length)
+
+        for table, cols in LOG_TABLES.items():
+            have = found.get(table, {})
+            for col, ddl in cols.items():
+                if col not in have:
+                    cur.execute(f"ALTER TABLE `{table}` ADD COLUMN `{col}` {ddl}")
+                    done.append(f"{table}.{col} added")
+                    continue
+                dtype, length = have[col]
+                want_len = int(ddl.split("(")[1].split(")")[0]) \
+                    if ddl.startswith("VARCHAR") else None
+                bad = (dtype in ("enum", "set")
+                       or (want_len and dtype in ("varchar", "char")
+                           and (length or 0) < want_len)
+                       or (ddl.startswith("TEXT") and dtype in ("varchar", "char")
+                           and (length or 0) < 255))
+                if bad:
+                    cur.execute(f"ALTER TABLE `{table}` MODIFY `{col}` {ddl}")
+                    done.append(f"{table}.{col} -> {ddl}")
+
+        # foreign keys on user_id that point at users1 reject every row
+        # (the app stores users.id there)
+        cur.execute(
+            """SELECT TABLE_NAME, CONSTRAINT_NAME FROM
+               information_schema.KEY_COLUMN_USAGE
+               WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'user_id'
+                 AND REFERENCED_TABLE_NAME IS NOT NULL
+                 AND REFERENCED_TABLE_NAME <> 'users'
+                 AND TABLE_NAME IN ("""
+            + ",".join(["%s"] * len(LOG_TABLES)) + ")",
+            list(LOG_TABLES))
+        for table, fk in cur.fetchall():
+            cur.execute(f"ALTER TABLE `{table}` DROP FOREIGN KEY `{fk}`")
+            done.append(f"{table}: dropped wrong foreign key {fk}")
+
+        cur.execute("""SELECT DATA_TYPE FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='hash_records'
+                         AND COLUMN_NAME='hash_status'""")
+        row = cur.fetchone()
+        if row and row[0].lower() == "enum":
+            cur.execute("ALTER TABLE hash_records MODIFY hash_status "
+                        "VARCHAR(30) NULL")
+            done.append("hash_records.hash_status -> VARCHAR")
+        conn().commit()
+    except Exception as exc:
+        print("[SCHEMA] could not auto-fix tables:", exc, flush=True)
+    finally:
+        cur.close()
+    print("[SCHEMA] " + ("; ".join(done) if done else "log tables OK"),
+          flush=True)
+
+
+with app.app_context():
+    try:
+        ensure_schema()
+    except Exception as exc:        # DB down at boot: app must still start
+        print("[SCHEMA] skipped:", exc, flush=True)
 
 
 # ---------- users / users1 -------------------------------------------------
@@ -1125,6 +1223,14 @@ def monitor_action(action, file_id, owner_id=None):
 
     outcome = recheck_stored_file(cursor, file_row)
     cursor.close()
+    if action == "restore":
+        _safe_write(
+            """INSERT INTO monitoring
+               (file_id, user_id, file_name, event, alert, detected_at, details)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (file_id, file_row["user_id"], file_row["file_name"], "Restored",
+             "safe" if outcome["status"] == "safe" else "medium",
+             datetime.now(), f"Restore -> {outcome['status']}"))
     log_activity(f"{'Tampered' if action == 'tamper' else 'Restored'} "
                  f"{file_row['file_name']} -> {outcome['status']}",
                  "TAMPER" if action == "tamper" else "RESTORE")
@@ -1180,54 +1286,19 @@ def ai_faq_loader():
     _faq_cache.update(rows=rows, at=time.time())
     return rows
 
+
 def ai_chat_saver(message, answer, mode):
-    """Save AI chat history safely."""
+    """User ki chat ai_chat_history me save karta hai (mode: 'AI' ya 'Basic')."""
     user_id = session.get("db_user_id")
-
     if not user_id:
-        app.logger.warning(
-            "Chat history not saved: db_user_id missing; session keys=%s",
-            list(session.keys())
-        )
         return
-
-    db = None
-    cursor = None
-
-    try:
-        db = conn()
-        cursor = db.cursor()
-
-        safe_message = str(message or "")[:800]
-        safe_answer = str(answer or "")[:8000]
-
-        # Store the supplied mode as a short string.
-        safe_mode = str(mode or "Basic").strip()[:30] or "Basic"
-
-        cursor.execute(
-            """
-            INSERT INTO ai_chat_history
-                (user_id, message, response, response_mode)
-            VALUES (%s, %s, %s, %s)
-            """,
-            (user_id, safe_message, safe_answer, safe_mode)
-        )
-
-        db.commit()
-        app.logger.info(
-            "Chat history saved for user_id=%s",
-            user_id
-        )
-
-    except Exception:
-        if db:
-            db.rollback()
-        app.logger.exception("AI chat history INSERT failed")
-        raise
-
-    finally:
-        if cursor:
-            cursor.close()
+    cursor = conn().cursor()
+    cursor.execute(
+        "INSERT INTO ai_chat_history (user_id, message, response, response_mode) "
+        "VALUES (%s, %s, %s, %s)",
+        (user_id, message[:800], answer[:8000], mode))
+    conn().commit()
+    cursor.close()
 
 
 ai_assistant.init(app, ai_user_context, ai_admin_context, ai_faq_loader, ai_chat_saver)
@@ -1587,6 +1658,25 @@ def api_admin_delete_file(file_id):
     remove_quietly(path)
     log_activity(f"Deleted file {row['file_name']}", "DELETE")
     return {"deleted": file_id}
+
+
+@app.route("/api/admin/db-health")
+@admin_required
+def api_admin_db_health():
+    """Row counts of every log table + the last failed writes."""
+    cursor = conn().cursor()
+    counts = {}
+    for table in ("files", "hash_records", "integrity_logs",
+                  "verification_history", "monitoring", "login_history",
+                  "system_activity_log"):
+        try:
+            cursor.execute(f"SELECT COUNT(*) FROM `{table}`")
+            counts[table] = cursor.fetchone()[0]
+        except Exception as exc:
+            counts[table] = f"ERROR: {exc}"
+    cursor.close()
+    return jsonify(database=_db["label"], rows=counts,
+                   last_write_errors=DB_WRITE_ERRORS)
 
 
 @app.route("/api/admin/scan", methods=["POST"])

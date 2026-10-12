@@ -1180,19 +1180,54 @@ def ai_faq_loader():
     _faq_cache.update(rows=rows, at=time.time())
     return rows
 
-
 def ai_chat_saver(message, answer, mode):
-    """User ki chat ai_chat_history me save karta hai (mode: 'AI' ya 'Basic')."""
+    """Save AI chat history safely."""
     user_id = session.get("db_user_id")
+
     if not user_id:
+        app.logger.warning(
+            "Chat history not saved: db_user_id missing; session keys=%s",
+            list(session.keys())
+        )
         return
-    cursor = conn().cursor()
-    cursor.execute(
-        "INSERT INTO ai_chat_history (user_id, message, response, response_mode) "
-        "VALUES (%s, %s, %s, %s)",
-        (user_id, message[:800], answer[:8000], mode))
-    conn().commit()
-    cursor.close()
+
+    db = None
+    cursor = None
+
+    try:
+        db = conn()
+        cursor = db.cursor()
+
+        safe_message = str(message or "")[:800]
+        safe_answer = str(answer or "")[:8000]
+
+        # Store the supplied mode as a short string.
+        safe_mode = str(mode or "Basic").strip()[:30] or "Basic"
+
+        cursor.execute(
+            """
+            INSERT INTO ai_chat_history
+                (user_id, message, response, response_mode)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (user_id, safe_message, safe_answer, safe_mode)
+        )
+
+        db.commit()
+        app.logger.info(
+            "Chat history saved for user_id=%s",
+            user_id
+        )
+
+    except Exception:
+        if db:
+            db.rollback()
+        app.logger.exception("AI chat history INSERT failed")
+        raise
+
+    finally:
+        if cursor:
+            cursor.close()
 
 
 ai_assistant.init(app, ai_user_context, ai_admin_context, ai_faq_loader, ai_chat_saver)

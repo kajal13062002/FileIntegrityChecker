@@ -39,12 +39,27 @@ VALUES_WRITTEN = {
     ("files", "status"): ["safe", "modified", "tampered"],
     ("hash_records", "hash_status"): ["active"],
     ("integrity_logs", "status"): ["safe", "modified", "tampered"],
-    ("verification_history", "result"): ["safe", "modified", "tampered"],
-    ("verification_history", "verification_type"): ["manual", "admin_scan"],
-    ("monitoring", "event"): ["Created", "Modified", "Tampered", "Missing"],
-    ("monitoring", "alert"): ["generated", "not_generated"],
+
+    ("verification_history", "result"): [
+        "Safe", "Modified", "Tampered", "Original"
+    ],
+    ("verification_history", "verification_type"): [
+        "manual", "admin_scan"
+    ],
+
+    ("monitoring", "event"): [
+        "Created", "Modified", "Tampered", "Missing"
+    ],
+    ("monitoring", "alert"): [
+        "low", "medium", "high", "critical", "safe"
+    ],
+
     ("login_history", "status"): ["success", "failed"],
-    ("reports", "status"): ["completed"],
+
+    ("reports", "status"): [
+        "generated", "pending", "failed"
+    ],
+
 }
 
 # columns that hold a hash: need room for 128 hex chars (SHA-512 / SHA3-512)

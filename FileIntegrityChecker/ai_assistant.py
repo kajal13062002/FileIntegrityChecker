@@ -360,6 +360,18 @@ def init(app, user_context, admin_context, faq_loader=None, chat_saver=None):
         except Exception as exc:                      # a DB hiccup must never break the chat
             app.logger.warning("FAQ load failed: %s", exc)
             faqs = []
+        # Prefer a direct, high-confidence answer from the MySQL cyber_faq table.
+        # This makes the common project questions work even without an external AI key.
+        db_matches = rank_faq(message, faqs, limit=1, min_score=0.5)
+        if db_matches:
+            answer = db_matches[0]["answer"]
+            if chat_saver and who.startswith("u"):
+                try:
+                    chat_saver(message, answer, "Database")
+                except Exception as exc:
+                    app.logger.warning("Chat history not saved: %s", exc)
+            return jsonify(answer=answer, source="database")
+
         system_text = (SYSTEM_PROMPT + (ADMIN_NOTE if who.startswith("a") else "")
                        + "\nUSER_DATA:\n" + json.dumps(data, ensure_ascii=False)
                        + faq_prompt(rank_faq(message, faqs)))

@@ -13,20 +13,20 @@ import io
 from collections import deque
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageFilter
 
-MAX_SIDE = 1600            # images are analysed at most this big
-PIXEL_THRESHOLD = 24       # per-channel difference (0-255) that counts as "different"
+MAX_SIDE = 1600
+PIXEL_THRESHOLD = 40       # kitna color farak "change" maane
+BLUR_RADIUS = 2            # JPEG noise hatane ke liye
+MIN_REGION_PIXELS = 40     # isse chhote dhabbe ignore
 MAX_REGIONS = 25
+COMPLETELY_DIFFERENT = 35  # % isse upar = alag photos, box nahi
+BOX_COLOR = (34, 220, 60)  # green
 
-
-# =========================================================================
-# 1. IMAGE COMPARE
-# =========================================================================
 
 def _load_image(data):
     image = Image.open(io.BytesIO(data))
-    image = ImageOps.exif_transpose(image)          # respect phone rotation
+    image = ImageOps.exif_transpose(image)
     if image.mode in ("RGBA", "LA", "P"):
         rgba = image.convert("RGBA")
         background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
@@ -36,20 +36,12 @@ def _load_image(data):
 
 
 def _regions_from_mask(mask, cell):
-    """Group the changed pixels into rectangular regions.
-
-    The mask is cut into cell x cell squares; squares that contain changes are
-    joined with their neighbours (8-way, plus a 1-square gap) and every joined
-    group becomes one region.
-    """
     height, width = mask.shape
     rows = (height + cell - 1) // cell
     cols = (width + cell - 1) // cell
-
     padded = np.zeros((rows * cell, cols * cell), dtype=bool)
     padded[:height, :width] = mask
-    cell_counts = padded.reshape(rows, cell, cols, cell).sum(axis=(1, 3))
-    active = cell_counts > 0
+    active = padded.reshape(rows, cell, cols, cell).any(axis=(1, 3))
 
     seen = np.zeros_like(active, dtype=bool)
     regions = []
@@ -63,8 +55,8 @@ def _regions_from_mask(mask, cell):
             while queue:
                 r, c = queue.popleft()
                 members.append((r, c))
-                for dr in (-2, -1, 0, 1, 2):
-                    for dc in (-2, -1, 0, 1, 2):
+                for dr in (-1, 0, 1):
+                    for dc in (-1, 0, 1):
                         rr, cc = r + dr, c + dc
                         if 0 <= rr < rows and 0 <= cc < cols and active[rr, cc] and not seen[rr, cc]:
                             seen[rr, cc] = True
@@ -73,9 +65,57 @@ def _regions_from_mask(mask, cell):
             cs = [m[1] for m in members]
             x0, y0 = min(cs) * cell, min(rs) * cell
             x1, y1 = min(width, (max(cs) + 1) * cell), min(height, (max(rs) + 1) * cell)
-            changed = int(mask[y0:y1, x0:x1].sum())
-            regions.append({"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0, "changed": changed})
+            part = mask[y0:y1, x0:x1]
+            changed = int(part.sum())
+            if changed < MIN_REGION_PIXELS:
+                continue
+            ys, xs = np.where(part)
+            pad = 4
+            bx0, by0 = max(0, x0 + int(xs.min()) - pad), max(0, y0 + int(ys.min()) - pad)
+            bx1, by1 = min(width, x0 + int(xs.max()) + 1 + pad), min(height, y0 + int(ys.max()) + 1 + pad)
+            regions.append({"x": bx0, "y": by0, "w": bx1 - bx0, "h": by1 - by0, "changed": changed})
     return regions
+
+
+def _merge_overlapping(regions, mask):
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(regions)):
+            for j in range(i + 1, len(regions)):
+                a, b = regions[i], regions[j]
+                if (a["x"] <= b["x"] + b["w"] and b["x"] <= a["x"] + a["w"]
+                        and a["y"] <= b["y"] + b["h"] and b["y"] <= a["y"] + a["h"]):
+                    x0, y0 = min(a["x"], b["x"]), min(a["y"], b["y"])
+                    x1 = max(a["x"] + a["w"], b["x"] + b["w"])
+                    y1 = max(a["y"] + a["h"], b["y"] + b["h"])
+                    regions[i] = {"x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0,
+                                  "changed": int(mask[y0:y1, x0:x1].sum())}
+                    del regions[j]
+                    merged = True
+                    break
+            if merged:
+                break
+    return regions
+
+
+def _draw_boxes(image, regions, width):
+    out = image.copy()
+    draw = ImageDraw.Draw(out)
+    line = max(2, width // 300)
+    for index, region in enumerate(regions, start=1):
+        box = (region["x"], region["y"], region["x"] + region["w"], region["y"] + region["h"])
+        draw.rectangle(box, outline=BOX_COLOR, width=line)
+        label_y = max(0, region["y"] - 16)
+        draw.rectangle((region["x"], label_y, region["x"] + 22, label_y + 15), fill=BOX_COLOR)
+        draw.text((region["x"] + 6, label_y + 2), str(index), fill=(0, 0, 0))
+    return out
+
+
+def _to_data_url(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 def image_diff(data_a, data_b):
@@ -83,51 +123,47 @@ def image_diff(data_a, data_b):
     b = _load_image(data_b)
     original_a, original_b = a.size, b.size
 
-    # work at a sensible size; B is stretched to A's shape if they differ
     scale = min(1.0, MAX_SIDE / max(a.size))
     work = (max(1, round(a.size[0] * scale)), max(1, round(a.size[1] * scale)))
     a = a.resize(work, Image.LANCZOS) if work != a.size else a
     resized_b = b.size != a.size
     b = b.resize(a.size, Image.LANCZOS) if resized_b else b
 
-    arr_a = np.asarray(a, dtype=np.int16)
-    arr_b = np.asarray(b, dtype=np.int16)
+    blur_a = a.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
+    blur_b = b.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
+    arr_a = np.asarray(blur_a, dtype=np.int16)
+    arr_b = np.asarray(blur_b, dtype=np.int16)
     mask = np.abs(arr_a - arr_b).max(axis=2) > PIXEL_THRESHOLD
 
     width, height = a.size
     total_pixels = width * height
     changed_pixels = int(mask.sum())
     percent = 100.0 * changed_pixels / total_pixels if total_pixels else 0.0
+    completely_different = percent >= COMPLETELY_DIFFERENT
 
-    cell = max(8, min(width, height) // 40)
-    regions = _regions_from_mask(mask, cell) if changed_pixels else []
-    for region in regions:
-        area = max(1, region["w"] * region["h"])
-        region["percent_of_image"] = round(100.0 * region["changed"] / total_pixels, 3)
-        region["percent_in_region"] = round(100.0 * region["changed"] / area, 1)
-    regions.sort(key=lambda r: r["changed"], reverse=True)
-    regions = regions[:MAX_REGIONS]
+    regions = []
+    if changed_pixels and not completely_different:
+        grown = Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(7))
+        grown_mask = np.asarray(grown) > 0
+        cell = max(6, min(width, height) // 60)
+        regions = _regions_from_mask(grown_mask, cell)
+        regions = _merge_overlapping(regions, mask)
+        regions = [r for r in regions if r["changed"] >= MIN_REGION_PIXELS]
+        for region in regions:
+            area = max(1, region["w"] * region["h"])
+            region["percent_of_image"] = round(100.0 * region["changed"] / total_pixels, 3)
+            region["percent_in_region"] = round(100.0 * region["changed"] / area, 1)
+        regions.sort(key=lambda r: r["changed"], reverse=True)
+        regions = regions[:MAX_REGIONS]
+        for index, region in enumerate(regions, start=1):
+            region["no"] = index
 
-    # highlighted copy of image A: changed pixels tinted red + a box per region
-    overlay = np.asarray(a, dtype=np.uint8).copy()
-    overlay[mask] = (0.35 * overlay[mask] + 0.65 * np.array([255, 40, 60])).astype(np.uint8)
-    highlight = Image.fromarray(overlay)
-    draw = ImageDraw.Draw(highlight)
-    line = max(2, width // 400)
-    for index, region in enumerate(regions, start=1):
-        box = (region["x"], region["y"], region["x"] + region["w"], region["y"] + region["h"])
-        draw.rectangle(box, outline=(255, 214, 0), width=line)
-        label_y = max(0, region["y"] - 16)
-        draw.rectangle((region["x"], label_y, region["x"] + 22, label_y + 15), fill=(255, 214, 0))
-        draw.text((region["x"] + 5, label_y + 2), str(index), fill=(0, 0, 0))
-
-    buffer = io.BytesIO()
-    highlight.save(buffer, format="PNG", optimize=True)
-    for index, region in enumerate(regions, start=1):
-        region["no"] = index
+    shown_a = _draw_boxes(a, regions, width) if regions else a
+    shown_b = _draw_boxes(b, regions, width) if regions else b
 
     return {
         "identical": changed_pixels == 0,
+        "completely_different": completely_different,
         "percent_different": round(percent, 3),
         "changed_pixels": changed_pixels,
         "total_pixels": total_pixels,
@@ -136,9 +172,10 @@ def image_diff(data_a, data_b):
         "resized_b": resized_b,
         "analysed_size": [width, height],
         "regions": regions,
-        "highlight": "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii"),
+        "highlight_a": _to_data_url(shown_a),
+        "highlight_b": _to_data_url(shown_b),
+        "highlight": _to_data_url(shown_b),
     }
-
 
 # =========================================================================
 # 2. PDF COMPARE

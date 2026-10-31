@@ -335,13 +335,43 @@ LOG_TABLES = {
 
 
 def ensure_schema():
+    """
+    Create/repair logging tables without allowing one malformed ENUM column
+    to prevent independent foreign-key repairs from running.
+    All application user_id values in these log tables are users.id values.
+    """
     cur = conn().cursor()
     done = []
+    warnings = []
     try:
         for table, cols in LOG_TABLES.items():
             body = ", ".join(f"`{c}` {t}" for c, t in cols.items())
-            cur.execute(f"CREATE TABLE IF NOT EXISTS `{table}` "
-                        f"(`id` INT AUTO_INCREMENT PRIMARY KEY, {body})")
+            cur.execute(
+                f"CREATE TABLE IF NOT EXISTS `{table}` "
+                f"(`id` INT AUTO_INCREMENT PRIMARY KEY, {body})"
+            )
+
+        # Drop incorrect user_id foreign keys first. The app stores users.id
+        # in these tables, never admin.id or users1.id.
+        cur.execute(
+            """SELECT TABLE_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME
+               FROM information_schema.KEY_COLUMN_USAGE
+               WHERE TABLE_SCHEMA = DATABASE()
+                 AND COLUMN_NAME = 'user_id'
+                 AND REFERENCED_TABLE_NAME IS NOT NULL
+                 AND REFERENCED_TABLE_NAME <> 'users'
+                 AND TABLE_NAME IN ("""
+            + ",".join(["%s"] * len(LOG_TABLES)) + ")",
+            list(LOG_TABLES)
+        )
+        for table, fk, referenced_table in cur.fetchall():
+            try:
+                cur.execute(f"ALTER TABLE `{table}` DROP FOREIGN KEY `{fk}`")
+                done.append(
+                    f"{table}: dropped incorrect FK {fk} -> {referenced_table}"
+                )
+            except Exception as exc:
+                warnings.append(f"{table}.{fk} FK repair failed: {exc}")
 
         cur.execute(
             """SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE,
@@ -349,60 +379,75 @@ def ensure_schema():
                FROM information_schema.COLUMNS
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ("""
             + ",".join(["%s"] * len(LOG_TABLES)) + ")",
-            list(LOG_TABLES))
+            list(LOG_TABLES)
+        )
         found = {}
         for table, col, dtype, length in cur.fetchall():
             found.setdefault(table, {})[col.lower()] = (dtype.lower(), length)
 
+        # Repair columns independently, so one malformed ENUM does not stop
+        # the other schema repairs.
         for table, cols in LOG_TABLES.items():
             have = found.get(table, {})
             for col, ddl in cols.items():
-                if col not in have:
-                    cur.execute(f"ALTER TABLE `{table}` ADD COLUMN `{col}` {ddl}")
-                    done.append(f"{table}.{col} added")
-                    continue
-                dtype, length = have[col]
-                want_len = int(ddl.split("(")[1].split(")")[0]) \
-                    if ddl.startswith("VARCHAR") else None
-                bad = (dtype in ("enum", "set")
-                       or (want_len and dtype in ("varchar", "char")
-                           and (length or 0) < want_len)
-                       or (ddl.startswith("TEXT") and dtype in ("varchar", "char")
-                           and (length or 0) < 255))
-                if bad:
-                    cur.execute(f"ALTER TABLE `{table}` MODIFY `{col}` {ddl}")
-                    done.append(f"{table}.{col} -> {ddl}")
+                try:
+                    if col not in have:
+                        cur.execute(
+                            f"ALTER TABLE `{table}` ADD COLUMN `{col}` {ddl}"
+                        )
+                        done.append(f"{table}.{col} added")
+                        continue
 
-        # foreign keys on user_id that point at users1 reject every row
-        # (the app stores users.id there)
-        cur.execute(
-            """SELECT TABLE_NAME, CONSTRAINT_NAME FROM
-               information_schema.KEY_COLUMN_USAGE
-               WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'user_id'
-                 AND REFERENCED_TABLE_NAME IS NOT NULL
-                 AND REFERENCED_TABLE_NAME <> 'users'
-                 AND TABLE_NAME IN ("""
-            + ",".join(["%s"] * len(LOG_TABLES)) + ")",
-            list(LOG_TABLES))
-        for table, fk in cur.fetchall():
-            cur.execute(f"ALTER TABLE `{table}` DROP FOREIGN KEY `{fk}`")
-            done.append(f"{table}: dropped wrong foreign key {fk}")
+                    dtype, length = have[col]
+                    want_len = (
+                        int(ddl.split("(")[1].split(")")[0])
+                        if ddl.startswith("VARCHAR") else None
+                    )
+                    bad = (
+                        dtype in ("enum", "set")
+                        or (want_len and dtype in ("varchar", "char")
+                            and (length or 0) < want_len)
+                        or (ddl.startswith("TEXT") and dtype in ("varchar", "char")
+                            and (length or 0) < 255)
+                    )
+                    if bad:
+                        cur.execute(
+                            f"ALTER TABLE `{table}` MODIFY `{col}` {ddl}"
+                        )
+                        done.append(f"{table}.{col} -> {ddl}")
+                except Exception as exc:
+                    warnings.append(f"{table}.{col} repair failed: {exc}")
 
-        cur.execute("""SELECT DATA_TYPE FROM information_schema.COLUMNS
-                       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='hash_records'
-                         AND COLUMN_NAME='hash_status'""")
-        row = cur.fetchone()
-        if row and row[0].lower() == "enum":
-            cur.execute("ALTER TABLE hash_records MODIFY hash_status "
-                        "VARCHAR(30) NULL")
-            done.append("hash_records.hash_status -> VARCHAR")
+        try:
+            cur.execute(
+                """SELECT DATA_TYPE FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE()
+                     AND TABLE_NAME='hash_records'
+                     AND COLUMN_NAME='hash_status'"""
+            )
+            row = cur.fetchone()
+            if row and row[0].lower() == "enum":
+                cur.execute(
+                    "ALTER TABLE hash_records MODIFY hash_status VARCHAR(30) NULL"
+                )
+                done.append("hash_records.hash_status -> VARCHAR(30)")
+        except Exception as exc:
+            warnings.append(f"hash_records.hash_status repair failed: {exc}")
+
         conn().commit()
     except Exception as exc:
-        print("[SCHEMA] could not auto-fix tables:", exc, flush=True)
+        try:
+            conn().rollback()
+        except Exception:
+            pass
+        warnings.append(f"schema repair stopped: {exc}")
     finally:
         cur.close()
-    print("[SCHEMA] " + ("; ".join(done) if done else "log tables OK"),
+
+    print("[SCHEMA] " + ("; ".join(done) if done else "no schema changes"),
           flush=True)
+    for warning in warnings:
+        print("[SCHEMA WARNING]", warning, flush=True)
 
 
 with app.app_context():
@@ -540,11 +585,11 @@ def admin_login():
         session["admin_name"] = admin["email"]
         session["login_row"] = log_login(admin["id"], email, "admin", "success")
         log_activity(
-           admin["id"],
-           admin["email"],
-           "Admin logged in",
-           "LOGIN"
-)
+            "Admin logged in",
+            "LOGIN",
+            user_id=admin["id"],
+            username=admin["email"]
+        )
         return redirect(url_for("admin_dashboard"))
 
     return render_template("admin/login.html")
@@ -1120,11 +1165,20 @@ def api_compare_image():
     if error:
         return error
     try:
+        if not data_a or not data_b:
+            return {"error": "One of the selected images is empty."}, 400
         result = compare_tools.image_diff(data_a, data_b)
     except Exception as exc:
-        app.logger.warning("image compare failed: %s", exc)
-        return {"error": "Could not read one of the images. "
-                         "Use PNG, JPG, WEBP, BMP or GIF files."}, 400
+        # Keep the detailed exception in Render/local logs for diagnosis.
+        # Do not expose server paths or internal details to the browser.
+        app.logger.exception("Image comparison failed")
+        return {
+            "error": (
+                "Image comparison could not be completed. "
+                "Please try PNG, JPG/JPEG, WEBP, GIF, BMP or TIFF images. "
+                f"Server error type: {type(exc).__name__}."
+            )
+        }, 400
     log_activity("Compared two images - "
                  f"{result['percent_different']}% different", "COMPARE")
     return result

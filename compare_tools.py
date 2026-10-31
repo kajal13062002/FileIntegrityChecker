@@ -13,7 +13,19 @@ import io
 from collections import deque
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageOps, ImageFilter
+from PIL import Image, ImageDraw, ImageOps, ImageFilter, UnidentifiedImageError
+
+# Optional decoders extend Pillow support for modern phone/web image formats.
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass
+
+try:
+    import pillow_avif  # noqa: F401 - importing registers the AVIF decoder
+except ImportError:
+    pass
 
 MAX_SIDE = 1600
 PIXEL_THRESHOLD = 40       # kitna color farak "change" maane
@@ -25,14 +37,43 @@ BOX_COLOR = (34, 220, 60)  # green
 
 
 def _load_image(data):
-    image = Image.open(io.BytesIO(data))
-    image = ImageOps.exif_transpose(image)
-    if image.mode in ("RGBA", "LA", "P"):
-        rgba = image.convert("RGBA")
-        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
-        background.alpha_composite(rgba)
-        image = background
-    return image.convert("RGB")
+    """
+    Decode the first frame of a supported image and normalize it for comparison.
+    Handles EXIF rotation, palette/alpha, grayscale, CMYK and other Pillow modes.
+    Pillow's installed decoders determine the exact formats available at runtime.
+    """
+    if not data:
+        raise ValueError("The uploaded image is empty.")
+
+    try:
+        with Image.open(io.BytesIO(data)) as source:
+            # Animated GIF/WEBP and multi-page TIFF: compare the first frame.
+            try:
+                source.seek(0)
+            except EOFError:
+                pass
+
+            image = ImageOps.exif_transpose(source)
+            image.load()
+
+            # Composite transparency onto a consistent white background.
+            has_alpha = "A" in image.getbands() or "transparency" in image.info
+            if has_alpha:
+                rgba = image.convert("RGBA")
+                background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+                background.alpha_composite(rgba)
+                image = background.convert("RGB")
+            else:
+                # Also normalizes palette, grayscale, CMYK, LAB and 16-bit modes.
+                image = image.convert("RGB")
+
+            if image.width < 1 or image.height < 1:
+                raise ValueError("The uploaded image has invalid dimensions.")
+            return image.copy()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ValueError(
+            "Unsupported or damaged image. Try PNG, JPG/JPEG, WEBP, GIF, BMP or TIFF."
+        ) from exc
 
 
 def _regions_from_mask(mask, cell):
@@ -123,11 +164,13 @@ def image_diff(data_a, data_b):
     b = _load_image(data_b)
     original_a, original_b = a.size, b.size
 
+    # Keep memory and response size predictable for large phone/AI images.
+    # Image 1 defines the comparison canvas; Image 2 is normalized to it.
     scale = min(1.0, MAX_SIDE / max(a.size))
-    work = (max(1, round(a.size[0] * scale)), max(1, round(a.size[1] * scale)))
-    a = a.resize(work, Image.LANCZOS) if work != a.size else a
+    work = (max(1, round(a.width * scale)), max(1, round(a.height * scale)))
+    a = a.resize(work, Image.Resampling.LANCZOS) if work != a.size else a
     resized_b = b.size != a.size
-    b = b.resize(a.size, Image.LANCZOS) if resized_b else b
+    b = b.resize(a.size, Image.Resampling.LANCZOS) if resized_b else b
 
     blur_a = a.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
     blur_b = b.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))

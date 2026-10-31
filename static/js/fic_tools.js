@@ -597,7 +597,8 @@ async function runServerCompare(kind, ids, outId, progId, buttonId) {
     button.disabled = false;
     
     if (!result.ok) {
-        out.innerHTML = `<div class="fic-card fic-empty">${esc(result.data.error || "Comparison failed.")}</div>`;
+        const message = result.data.error || `Comparison failed (HTTP ${result.status || "network error"}).`;
+        out.innerHTML = `<div class="fic-card fic-empty">${esc(message)}</div>`;
         return;
     }
     

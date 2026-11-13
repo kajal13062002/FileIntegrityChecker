@@ -27,7 +27,7 @@ try:
 except ImportError:
     pass
 
-MAX_SIDE = 1600
+MAX_SIDE = 1000
 PIXEL_THRESHOLD = 40       # kitna color farak "change" maane
 BLUR_RADIUS = 2            # JPEG noise hatane ke liye
 MIN_REGION_PIXELS = 40     # isse chhote dhabbe ignore
@@ -158,67 +158,107 @@ def _to_data_url(image):
     image.save(buffer, format="PNG", optimize=True)
     return "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
-
 def image_diff(data_a, data_b):
     a = _load_image(data_a)
     b = _load_image(data_b)
-    original_a, original_b = a.size, b.size
 
-    # Keep memory and response size predictable for large phone/AI images.
-    # Image 1 defines the comparison canvas; Image 2 is normalized to it.
-    scale = min(1.0, MAX_SIDE / max(a.size))
-    work = (max(1, round(a.width * scale)), max(1, round(a.height * scale)))
-    a = a.resize(work, Image.Resampling.LANCZOS) if work != a.size else a
-    resized_b = b.size != a.size
-    b = b.resize(a.size, Image.Resampling.LANCZOS) if resized_b else b
+    try:
+        original_a, original_b = a.size, b.size
 
-    blur_a = a.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
-    blur_b = b.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
-    arr_a = np.asarray(blur_a, dtype=np.int16)
-    arr_b = np.asarray(blur_b, dtype=np.int16)
-    mask = np.abs(arr_a - arr_b).max(axis=2) > PIXEL_THRESHOLD
+        # Resize both images while keeping aspect ratio.
+        def prepare_image(img):
+            img = ImageOps.exif_transpose(img)
+            img.thumbnail(
+                (MAX_SIDE, MAX_SIDE),
+                Image.Resampling.LANCZOS
+            )
+            return img.convert("RGB")
 
-    width, height = a.size
-    total_pixels = width * height
-    changed_pixels = int(mask.sum())
-    percent = 100.0 * changed_pixels / total_pixels if total_pixels else 0.0
-    completely_different = percent >= COMPLETELY_DIFFERENT
+        a = prepare_image(a)
+        b = prepare_image(b)
 
-    regions = []
-    if changed_pixels and not completely_different:
-        grown = Image.fromarray((mask * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(7))
-        grown_mask = np.asarray(grown) > 0
-        cell = max(6, min(width, height) // 60)
-        regions = _regions_from_mask(grown_mask, cell)
-        regions = _merge_overlapping(regions, mask)
-        regions = [r for r in regions if r["changed"] >= MIN_REGION_PIXELS]
-        for region in regions:
-            area = max(1, region["w"] * region["h"])
-            region["percent_of_image"] = round(100.0 * region["changed"] / total_pixels, 3)
-            region["percent_in_region"] = round(100.0 * region["changed"] / area, 1)
-        regions.sort(key=lambda r: r["changed"], reverse=True)
-        regions = regions[:MAX_REGIONS]
-        for index, region in enumerate(regions, start=1):
-            region["no"] = index
+        resized_b = b.size != a.size
+        if resized_b:
+            b = b.resize(a.size, Image.Resampling.LANCZOS)
 
-    shown_a = _draw_boxes(a, regions, width) if regions else a
-    shown_b = _draw_boxes(b, regions, width) if regions else b
+        blur_a = a.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
+        blur_b = b.filter(ImageFilter.GaussianBlur(BLUR_RADIUS))
 
-    return {
-        "identical": changed_pixels == 0,
-        "completely_different": completely_different,
-        "percent_different": round(percent, 3),
-        "changed_pixels": changed_pixels,
-        "total_pixels": total_pixels,
-        "size_a": list(original_a),
-        "size_b": list(original_b),
-        "resized_b": resized_b,
-        "analysed_size": [width, height],
-        "regions": regions,
-        "highlight_a": _to_data_url(shown_a),
-        "highlight_b": _to_data_url(shown_b),
-        "highlight": _to_data_url(shown_b),
-    }
+        arr_a = np.asarray(blur_a, dtype=np.int16)
+        arr_b = np.asarray(blur_b, dtype=np.int16)
+
+        mask = np.abs(arr_a - arr_b).max(axis=2) > PIXEL_THRESHOLD
+
+        width, height = a.size
+        total_pixels = width * height
+        changed_pixels = int(mask.sum())
+
+        percent = (
+            100.0 * changed_pixels / total_pixels
+            if total_pixels else 0.0
+        )
+
+        completely_different = percent >= COMPLETELY_DIFFERENT
+
+        regions = []
+
+        if changed_pixels and not completely_different:
+            grown = Image.fromarray(
+                (mask * 255).astype(np.uint8)
+            ).filter(ImageFilter.MaxFilter(7))
+
+            grown_mask = np.asarray(grown) > 0
+
+            cell = max(6, min(width, height) // 60)
+            regions = _regions_from_mask(grown_mask, cell)
+            regions = _merge_overlapping(regions, mask)
+
+            regions = [
+                r for r in regions
+                if r["changed"] >= MIN_REGION_PIXELS
+            ]
+
+            for region in regions:
+                area = max(1, region["w"] * region["h"])
+                region["percent_of_image"] = round(
+                    100.0 * region["changed"] / total_pixels, 3
+                )
+                region["percent_in_region"] = round(
+                    100.0 * region["changed"] / area, 1
+                )
+
+            regions.sort(
+                key=lambda r: r["changed"],
+                reverse=True
+            )
+            regions = regions[:MAX_REGIONS]
+
+            for index, region in enumerate(regions, start=1):
+                region["no"] = index
+
+        shown_a = _draw_boxes(a, regions, width) if regions else a
+        shown_b = _draw_boxes(b, regions, width) if regions else b
+
+        return {
+            "identical": changed_pixels == 0,
+            "completely_different": completely_different,
+            "percent_different": round(percent, 3),
+            "changed_pixels": changed_pixels,
+            "total_pixels": total_pixels,
+            "size_a": list(original_a),
+            "size_b": list(original_b),
+            "resized_b": resized_b,
+            "analysed_size": [width, height],
+            "regions": regions,
+            "highlight_a": _to_data_url(shown_a),
+            "highlight_b": _to_data_url(shown_b),
+            "highlight": _to_data_url(shown_b),
+        }
+
+    finally:
+        a.close()
+        b.close()
+
 
 # =========================================================================
 # 2. PDF COMPARE
